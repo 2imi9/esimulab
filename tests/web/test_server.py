@@ -29,7 +29,9 @@ async def test_health(client):
 
 
 @pytest.mark.asyncio
-async def test_terrain_404_when_no_data(client):
+async def test_terrain_404_when_no_data(client, tmp_path, monkeypatch):
+    import esimulab.web.server as srv
+    monkeypatch.setattr(srv, "DATA_DIR", tmp_path)
     resp = await client.get("/api/terrain")
     assert resp.status_code == 404
 
@@ -59,7 +61,9 @@ async def test_terrain_returns_binary(client, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_frames_empty_when_no_data(client):
+async def test_frames_empty_when_no_data(client, tmp_path, monkeypatch):
+    import esimulab.web.server as srv
+    monkeypatch.setattr(srv, "DATA_DIR", tmp_path)
     resp = await client.get("/api/frames")
     assert resp.status_code == 200
     assert resp.json()["frames"] == []
@@ -82,13 +86,17 @@ async def test_frames_lists_available(client, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_frame_404(client):
+async def test_frame_404(client, tmp_path, monkeypatch):
+    import esimulab.web.server as srv
+    monkeypatch.setattr(srv, "DATA_DIR", tmp_path)
     resp = await client.get("/api/frames/nonexistent")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_metadata_no_simulation(client):
+async def test_metadata_no_simulation(client, tmp_path, monkeypatch):
+    import esimulab.web.server as srv
+    monkeypatch.setattr(srv, "DATA_DIR", tmp_path)
     resp = await client.get("/api/metadata")
     assert resp.status_code == 200
     assert resp.json()["status"] == "no_simulation"
