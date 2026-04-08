@@ -3,7 +3,7 @@
 // --- CesiumJS Ion token ---
 // Get a free token at https://ion.cesium.com/tokens
 // For development, the default token provides basic imagery
-Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIyOGExNTVjMC01ZjBjLTQyNTAtOGM1NS1iNjgzZGIwYmZmNTUiLCJpZCI6MjU5LCJpYXQiOjE3MzM1ODQ0NTJ9.placeholder_replace_with_real_token';
+Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2ZGIyYTM2Ni1jYTNjLTRiOWQtOTM3NS1mYjhkY2Y5NjgyZTkiLCJpZCI6NDE1NTkyLCJpYXQiOjE3NzU2ODExMDF9.IYSCSnkuW93o-zfmonZaeKEskBQZtCKNGlFm7WvDDp8';
 
 // --- Viewer Setup ---
 const viewer = new Cesium.Viewer('cesiumContainer', {
