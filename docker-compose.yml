@@ -1,0 +1,35 @@
+services:
+  genesis-sim:
+    build:
+      context: .
+      dockerfile: docker/genesis-sim/Dockerfile
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - path: .env
+        required: false
+    profiles:
+      - gpu
+
+  web-viewer:
+    build:
+      context: .
+      dockerfile: docker/web-viewer/Dockerfile
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data:ro
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      genesis-sim:
+        condition: service_completed_successfully
+        required: false

@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.venv/
+venv/
+
+# uv
+.uv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker
+docker/genesis-sim/tmp/
+docker/web-viewer/tmp/
+
+# Project data (simulation output)
+data/
+
+# Environment
+.env
+*.env.local
+
+# Node (web viewer)
+node_modules/
+
+# Claude
+.claude/
