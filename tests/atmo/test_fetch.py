@@ -4,7 +4,7 @@ from datetime import datetime
 
 import numpy as np
 
-from esimulab.atmo.fetch import _generate_synthetic, fetch_era5
+from esimulab.atmo.fetch import _generate_synthetic, fetch_atmosphere, fetch_era5, fetch_gfs
 
 
 class TestGenerateSynthetic:
@@ -61,3 +61,32 @@ class TestFetchEra5:
         assert "u10m" in ds
         assert "v10m" in ds
         assert "t2m" not in ds
+
+
+class TestFetchGfs:
+    def test_synthetic_fallback(self):
+        bbox = (-119.1, 33.4, -118.9, 35.4)
+        time = datetime(2023, 6, 15)
+        ds = fetch_gfs(bbox, time)
+        assert "u10m" in ds
+
+
+class TestFetchAtmosphere:
+    def test_auto_source(self):
+        bbox = (-119.1, 33.4, -118.9, 35.4)
+        time = datetime(2023, 6, 15)
+        ds = fetch_atmosphere(bbox, time, source="auto")
+        assert "u10m" in ds
+        assert "t2m" in ds
+
+    def test_era5_source(self):
+        bbox = (-119.1, 33.4, -118.9, 35.4)
+        time = datetime(2023, 6, 15)
+        ds = fetch_atmosphere(bbox, time, source="era5")
+        assert len(ds.data_vars) > 0
+
+    def test_gfs_source(self):
+        bbox = (-119.1, 33.4, -118.9, 35.4)
+        time = datetime(2023, 6, 15)
+        ds = fetch_atmosphere(bbox, time, source="gfs")
+        assert len(ds.data_vars) > 0
