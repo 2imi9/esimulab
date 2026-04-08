@@ -22,6 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
     libglib2.0-0 \
     libegl1-mesa \
     libgl1-mesa-dev \
+    libxrender1 \
+    libxext6 \
+    libx11-6 \
+    xvfb \
     curl \
     git \
     && rm -rf /var/lib/apt/lists/*
@@ -55,5 +59,11 @@ RUN uv pip install \
 # Shared data volume mount point
 VOLUME /app/data
 
-ENTRYPOINT ["uv", "run"]
-CMD ["python", "-m", "esimulab"]
+# Headless rendering: Xvfb provides a virtual X display for Genesis/pyglet
+ENV DISPLAY=:99
+
+# Entrypoint starts Xvfb then runs the command
+COPY docker/genesis-sim/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["uv", "run", "python", "-m", "esimulab"]
