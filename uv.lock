@@ -1072,16 +1072,18 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+gpu = [
+    { name = "earth2studio" },
+    { name = "genesis-world" },
+]
+
+[package.dev-dependencies]
 dev = [
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "ruff" },
-]
-gpu = [
-    { name = "earth2studio" },
-    { name = "genesis-world" },
 ]
 
 [package.metadata]
@@ -1093,18 +1095,22 @@ requires-dist = [
     { name = "genesis-world", marker = "extra == 'gpu'", specifier = ">=0.4" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "rasterio", specifier = ">=1.3" },
     { name = "rioxarray", specifier = ">=0.14" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "trimesh", specifier = ">=4.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
     { name = "xarray", specifier = ">=2023.1" },
 ]
-provides-extras = ["gpu", "dev"]
+provides-extras = ["gpu"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pre-commit", specifier = ">=3.7" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23" },
+    { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "ruff", specifier = ">=0.4" },
+]
 
 [[package]]
 name = "etils"
