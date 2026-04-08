@@ -7,15 +7,17 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
 
 # System dependencies for rasterio, GDAL, pygrib, Genesis rendering
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Add deadsnakes PPA for Python 3.11 on Ubuntu 22.04
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
     python3.11-venv \
     python3.11-dev \
-    python3-pip \
     gdal-bin \
     libgdal-dev \
-    libgrib-api-dev \
     libeccodes-dev \
+    libeccodes-tools \
     libgl1-mesa-glx \
     libglib2.0-0 \
     libegl1-mesa \
