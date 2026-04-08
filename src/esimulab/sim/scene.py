@@ -77,11 +77,6 @@ def build_scene(
             upper_bound=solver_upper,
             particle_size=sph_particle_size,
         ),
-        "coupler_options": gs.options.CouplerOptions(
-            rigid_sph=True,
-            rigid_mpm=True,
-            mpm_sph=True,
-        ),
         "renderer": gs.renderers.RayTracer(
             tracing_depth=32,
             lights=[
