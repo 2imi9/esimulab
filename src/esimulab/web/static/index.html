@@ -6,30 +6,52 @@
   <title>Esimulab Viewer</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #1a1a2e; color: #e0e0e0; font-family: system-ui, sans-serif; overflow: hidden; }
+    body { background: #0a0a1a; color: #e0e0e0; font-family: system-ui, sans-serif; overflow: hidden; }
     #canvas-container { width: 100vw; height: 100vh; position: relative; }
     canvas { display: block; }
+
     #controls {
       position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-      background: rgba(0,0,0,0.7); padding: 12px 24px; border-radius: 8px;
-      display: flex; gap: 16px; align-items: center; backdrop-filter: blur(8px);
+      background: rgba(10,10,26,0.8); padding: 10px 20px; border-radius: 10px;
+      display: flex; gap: 14px; align-items: center; backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.1);
     }
+    .back-link {
+      color: #93c5fd; text-decoration: none; font-size: 13px; font-weight: 500;
+      padding: 5px 10px; border-radius: 4px; transition: background 0.2s;
+    }
+    .back-link:hover { background: rgba(147,197,253,0.1); }
     button {
-      background: #16213e; color: #e0e0e0; border: 1px solid #0f3460;
-      padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 14px;
+      background: #1e293b; color: #e0e0e0; border: 1px solid rgba(255,255,255,0.15);
+      padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;
+      transition: all 0.2s;
     }
-    button:hover { background: #0f3460; }
-    button.active { background: #e94560; border-color: #e94560; }
-    input[type="range"] { width: 120px; }
-    label { font-size: 13px; }
+    button:hover { background: #334155; }
+    button.active { background: #2563eb; border-color: #2563eb; }
+    input[type="range"] { width: 100px; accent-color: #2563eb; }
+    label { font-size: 12px; color: #94a3b8; }
+
     #info {
       position: absolute; top: 12px; left: 12px;
-      background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 4px;
-      font-size: 12px; font-family: monospace;
+      background: rgba(10,10,26,0.8); padding: 8px 14px; border-radius: 8px;
+      font-size: 11px; font-family: 'JetBrains Mono', monospace, monospace;
+      backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08);
     }
+
+    #weather-info {
+      position: absolute; top: 12px; right: 12px;
+      background: rgba(10,10,26,0.85); padding: 12px 16px; border-radius: 10px;
+      font-size: 12px; backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.1); display: none; min-width: 180px;
+    }
+    .info-label { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 2px; }
+    .info-value { color: #cbd5e1; margin-bottom: 4px; }
+
     #loading {
       position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      font-size: 18px;
+      font-size: 15px; color: #94a3b8; background: rgba(10,10,26,0.9);
+      padding: 16px 28px; border-radius: 10px; backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.1);
     }
   </style>
 </head>
@@ -41,12 +63,13 @@
       <span id="frame-counter">Frame: 0/0</span> |
       <span id="particle-count">Particles: 0</span>
     </div>
+    <div id="weather-info"></div>
     <div id="controls">
-      <a href="/" class="back-link" style="color:#93c5fd;text-decoration:none;font-size:13px">← Globe</a>
+      <a href="/" class="back-link">Globe</a>
       <button id="btn-play" class="active">Play</button>
       <button id="btn-pause">Pause</button>
-      <label>Speed: <input type="range" id="speed-slider" min="0.1" max="5" step="0.1" value="1"></label>
-      <label>Frame: <input type="range" id="frame-slider" min="0" max="100" step="1" value="0"></label>
+      <label>Speed <input type="range" id="speed-slider" min="0.1" max="5" step="0.1" value="1"></label>
+      <label>Frame <input type="range" id="frame-slider" min="0" max="100" step="1" value="0"></label>
     </div>
   </div>
 

@@ -266,19 +266,84 @@ function updateParticles(positions) {
   document.getElementById('particle-count').textContent = `Particles: ${count.toLocaleString()}`;
 }
 
-// ── Wind metadata display ──────────────────────────────────
-async function loadWindInfo() {
+// ── URL bbox parameter ─────────────────────────────────────
+function getBboxFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const bbox = params.get('bbox');
+  if (!bbox) return null;
+  const parts = bbox.split(',').map(Number);
+  if (parts.length !== 4 || parts.some(isNaN)) return null;
+  return { west: parts[0], south: parts[1], east: parts[2], north: parts[3] };
+}
+
+async function fetchRegionTerrain(bbox) {
+  document.getElementById('loading').textContent = 'Fetching terrain for selected region...';
+  document.getElementById('loading').style.display = 'block';
   try {
-    const resp = await fetch('/api/terrain/metadata');
-    if (!resp.ok) return;
-    // Also try loading wind data
-    const windResp = await fetch('/static/../../api/metadata');
-    if (windResp.ok) {
-      const meta = await windResp.json();
-      if (meta.bbox) {
-        const infoEl = document.getElementById('region-info');
-        if (infoEl) infoEl.textContent = `Region: ${meta.bbox.join(', ')}`;
+    const resp = await fetch('/api/region', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bbox),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: 'Unknown error' }));
+      document.getElementById('loading').textContent = `Error: ${err.detail}`;
+      return false;
+    }
+    return true;
+  } catch (e) {
+    document.getElementById('loading').textContent = `Network error: ${e.message}`;
+    return false;
+  }
+}
+
+// ── Weather info panel ─────────────────────────────────────
+async function loadWeatherInfo() {
+  const infoPanel = document.getElementById('weather-info');
+  if (!infoPanel) return;
+
+  try {
+    const metaResp = await fetch('/api/metadata');
+    const meta = metaResp.ok ? await metaResp.json() : null;
+
+    const terrainResp = await fetch('/api/terrain/metadata');
+    const terrainMeta = terrainResp.ok ? await terrainResp.json() : null;
+
+    let html = '';
+
+    if (terrainMeta) {
+      const rows = terrainMeta.rows || '?';
+      const cols = terrainMeta.cols || '?';
+      const ps = terrainMeta.pixel_size?.toFixed(1) || '?';
+      html += `<div class="info-label">Terrain</div>`;
+      html += `<div class="info-value">${cols}x${rows} @ ${ps}m/px</div>`;
+
+      if (terrainMeta.bounds_min && terrainMeta.bounds_max) {
+        const zMin = terrainMeta.bounds_min[2]?.toFixed(0) || '0';
+        const zMax = terrainMeta.bounds_max[2]?.toFixed(0) || '0';
+        html += `<div class="info-value">Elev: ${zMin}–${zMax} m</div>`;
       }
+    }
+
+    if (meta && meta.bbox) {
+      const [w, s, e, n] = meta.bbox;
+      html += `<div class="info-label" style="margin-top:6px">Region</div>`;
+      html += `<div class="info-value">${n.toFixed(3)}°N ${w.toFixed(3)}°W</div>`;
+    }
+
+    // Try wind data
+    try {
+      const windResp = await fetch('/static/wind.json');
+      if (windResp.ok) {
+        const wind = await windResp.json();
+        html += `<div class="info-label" style="margin-top:6px">Wind</div>`;
+        html += `<div class="info-value">${wind.magnitude?.toFixed(1) || '?'} m/s</div>`;
+      }
+    } catch { /* no wind data */ }
+
+    if (html) {
+      infoPanel.innerHTML = html;
+      infoPanel.style.display = 'block';
     }
   } catch { /* ignore */ }
 }
@@ -369,10 +434,20 @@ window.addEventListener('resize', () => {
 
 // ── Init ───────────────────────────────────────────────────
 async function init() {
+  // Check if bbox was passed from globe selection
+  const bbox = getBboxFromUrl();
+  if (bbox) {
+    const ok = await fetchRegionTerrain(bbox);
+    if (!ok) {
+      // Still try to load whatever terrain exists
+      console.warn('Region fetch failed, loading existing terrain');
+    }
+  }
+
   initParticles();
   await loadTerrain();
   await loadFrameList();
-  loadWindInfo();
+  loadWeatherInfo();
   animate(0);
 }
 
