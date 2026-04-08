@@ -1,21 +1,29 @@
 # Genesis simulation container with NVIDIA GPU support
 # Requires: docker run --gpus all
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONIOENCODING=utf-8
 
-# System dependencies for rasterio, GDAL, and Genesis rendering
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# System dependencies for rasterio, GDAL, pygrib, Genesis rendering
+# Add deadsnakes PPA for Python 3.11 on Ubuntu 22.04
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
     python3.11-venv \
     python3.11-dev \
-    python3-pip \
     gdal-bin \
     libgdal-dev \
+    libeccodes-dev \
+    libeccodes-tools \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    libegl1-mesa \
+    libgl1-mesa-dev \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -26,14 +34,22 @@ WORKDIR /app
 # Copy dependency files first for layer caching
 COPY pyproject.toml uv.lock .python-version ./
 
-# Install dependencies (without the project itself)
+# Install core dependencies
 RUN uv sync --frozen --no-install-project
+
+# Install GPU extras: genesis-world, earth2studio, and their deps
+RUN uv pip install \
+    torch --index-url https://download.pytorch.org/whl/cu124 \
+    && uv pip install \
+    genesis-world \
+    earth2studio \
+    nvidia-physicsnemo
 
 # Copy source code
 COPY src/ src/
 COPY README.md ./
 
-# Install the project
+# Install the project itself
 RUN uv sync --frozen
 
 # Shared data volume mount point
