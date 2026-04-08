@@ -12,6 +12,8 @@ services:
               capabilities: [gpu]
     volumes:
       - ./data:/app/data
+      - ./scripts:/app/scripts:ro
+      - ./src:/app/src:ro
     env_file:
       - path: .env
         required: false
