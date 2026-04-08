@@ -81,6 +81,13 @@ def _fetch_via_earth2studio(
     lat_min, lat_max = min(south, north), max(south, north)
     lon_min, lon_max = min(west, east), max(west, east)
 
+    # ERA5 ARCO uses 0-360° longitude; convert negative bbox lons
+    lons = da.coords["lon"].values
+    if lons.max() > 180:
+        lon_min = lon_min % 360
+        lon_max = lon_max % 360
+        logger.debug("Converted lon to 0-360 range: [%.1f, %.1f]", lon_min, lon_max)
+
     # Handle both ascending and descending lat
     lats = da.coords["lat"].values
     if lats[0] > lats[-1]:  # descending

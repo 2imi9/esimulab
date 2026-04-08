@@ -45,10 +45,19 @@ def test_arco_fetch():
     # Crop to bbox
     west, south, east, north = bbox
     lats = da.coords["lat"].values
+    lons = da.coords["lon"].values
+
+    # ERA5 ARCO uses 0-360 longitude; convert negative bbox lons
+    lon_min = west % 360
+    lon_max = east % 360
+
+    print(f"  Lon range in data: [{lons.min():.1f}, {lons.max():.1f}]")
+    print(f"  Converted bbox lon: [{lon_min:.1f}, {lon_max:.1f}]")
+
     if lats[0] > lats[-1]:
-        da_region = da.sel(lat=slice(north, south), lon=slice(west, east))
+        da_region = da.sel(lat=slice(north, south), lon=slice(lon_min, lon_max))
     else:
-        da_region = da.sel(lat=slice(south, north), lon=slice(west, east))
+        da_region = da.sel(lat=slice(south, north), lon=slice(lon_min, lon_max))
 
     print(f"\n[OK] Cropped shape: {da_region.shape}")
 
