@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import platform
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -27,6 +28,60 @@ def _import_genesis():
         raise ImportError(msg) from e
 
 
+def _select_backend(gs, backend: str | None = None):
+    """Select Genesis compute backend with fallback.
+
+    Args:
+        gs: Genesis module.
+        backend: 'gpu', 'cpu', or None (auto-detect).
+
+    Returns:
+        Genesis backend constant.
+    """
+    if backend == "cpu":
+        logger.info("Using CPU backend (explicit)")
+        return gs.cpu
+
+    # Default: try GPU
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            logger.info("GPU detected: %s", torch.cuda.get_device_name(0))
+            return gs.gpu
+    except ImportError:
+        pass
+
+    if backend == "gpu":
+        logger.warning("GPU requested but CUDA not available, trying anyway")
+        return gs.gpu
+
+    logger.info("No GPU detected, falling back to CPU backend")
+    return gs.cpu
+
+
+def _create_renderer(gs, renderer_spp: int = 64):
+    """Create renderer based on platform.
+
+    RayTracer requires LuisaRenderPy (Linux-only).
+    Falls back to Rasterizer on Windows or if LuisaRender unavailable.
+    """
+    if platform.system() != "Linux":
+        logger.info("Non-Linux platform detected, using Rasterizer renderer")
+        return gs.renderers.Rasterizer()
+
+    try:
+        renderer = gs.renderers.RayTracer(
+            tracing_depth=32,
+            lights=[{"pos": (0, 0, 200), "color": (1, 1, 1), "intensity": 10, "radius": 4}],
+        )
+        logger.info("Using RayTracer renderer (spp=%d)", renderer_spp)
+        return renderer
+    except Exception:
+        logger.warning("RayTracer unavailable (LuisaRenderPy missing), using Rasterizer")
+        return gs.renderers.Rasterizer()
+
+
 def build_scene(
     heightfield: GenesisHeightfield,
     wind: WindForcing | None = None,
@@ -38,6 +93,7 @@ def build_scene(
     max_rain_particles: int = 100000,
     renderer_spp: int = 64,
     show_viewer: bool = False,
+    backend: str | None = None,
 ) -> dict[str, Any]:
     """Build a Genesis scene with terrain, water, and atmospheric forcing.
 
@@ -52,13 +108,15 @@ def build_scene(
         max_rain_particles: Maximum SPH particles for rain emitter.
         renderer_spp: Ray tracer samples per pixel.
         show_viewer: Whether to open the interactive viewer.
+        backend: 'gpu', 'cpu', or None (auto-detect).
 
     Returns:
         Dict with keys: 'scene', 'terrain', 'emitter', 'camera'.
     """
     gs = _import_genesis()
 
-    gs.init(backend=gs.gpu, precision="32")
+    gs_backend = _select_backend(gs, backend)
+    gs.init(backend=gs_backend, precision="32")
 
     # Compute solver bounds from heightfield
     bmin = heightfield.bounds_min
@@ -69,6 +127,8 @@ def build_scene(
     solver_upper = (bmax[0] + margin, bmax[1] + margin, bmax[2] + 200)
 
     # Build scene options
+    renderer = _create_renderer(gs, renderer_spp)
+
     scene_kwargs = {
         "sim_options": gs.options.SimOptions(dt=dt, substeps=substeps, gravity=(0, 0, -9.81)),
         "rigid_options": gs.options.RigidOptions(enable_collision=True),
@@ -77,12 +137,7 @@ def build_scene(
             upper_bound=solver_upper,
             particle_size=sph_particle_size,
         ),
-        "renderer": gs.renderers.RayTracer(
-            tracing_depth=32,
-            lights=[
-                {"pos": (0, 0, bmax[2] + 100), "color": (1, 1, 1), "intensity": 10, "radius": 4}
-            ],
-        ),
+        "renderer": renderer,
         "show_viewer": show_viewer,
     }
 
@@ -141,13 +196,26 @@ def build_scene(
         spp=renderer_spp,
     )
 
-    scene.build()
+    # Build with graceful error handling for Taichi kernel compilation
+    try:
+        scene.build()
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "taichi" in error_msg or "kernel" in error_msg or "cuda" in error_msg:
+            logger.error(
+                "Taichi kernel compilation failed. This may be due to unsupported GPU "
+                "architecture (e.g., Blackwell sm_120). Try: --backend cpu, or use Docker "
+                "with a tested CUDA toolkit. Error: %s",
+                e,
+            )
+        raise
 
     logger.info(
-        "Scene built: terrain=%s, wind=%s, rain=%s",
+        "Scene built: terrain=%s, wind=%s, rain=%s, backend=%s",
         heightfield.height_field.shape,
         wind is not None,
         emitter is not None,
+        gs_backend,
     )
 
     return {
