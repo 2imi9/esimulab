@@ -42,3 +42,14 @@ docker compose run genesis-sim python -c "import genesis"  # Test GPU container
 ## VRAM Budget (24GB RTX 5090)
 Run atmospheric AI inference FIRST, then free weights and start Genesis simulation.
 Never load CorrDiff/cBottle and Genesis simultaneously.
+
+## Known Issues (RTX 5090 Blackwell / Windows)
+- **Taichi sm_120**: Genesis uses Taichi JIT which may not fully support Blackwell
+  (sm_120 compute capability). Workaround: use `--backend cpu` or Docker with
+  tested CUDA toolkit. Monitor Taichi releases for Blackwell support.
+- **RayTracer**: Requires LuisaRenderPy (Linux-only C++ renderer). On Windows,
+  the scene builder automatically falls back to Rasterizer.
+- **PyTorch**: Requires cu130 build for native Blackwell support. Install with:
+  `pip install torch --index-url https://download.pytorch.org/whl/cu130`
+- **CouplerOptions**: Genesis 0.4.5 does not have `gs.options.CouplerOptions`.
+  Coupling is automatic via LegacyCouplerOptions/SAPCouplerOptions internally.

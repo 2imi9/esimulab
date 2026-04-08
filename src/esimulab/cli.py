@@ -31,6 +31,12 @@ import click
     help="Output directory for simulation results.",
 )
 @click.option("--no-gpu", is_flag=True, help="Skip GPU simulation, only fetch data.")
+@click.option(
+    "--backend",
+    type=click.Choice(["gpu", "cpu"], case_sensitive=False),
+    default=None,
+    help="Genesis compute backend. Default: auto-detect.",
+)
 @click.option("--serve", is_flag=True, help="Launch web viewer after simulation.")
 @click.option("--port", type=int, default=8000, help="Web viewer port.")
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging.")
@@ -40,6 +46,7 @@ def main(
     steps: int,
     output_dir: str,
     no_gpu: bool,
+    backend: str | None,
     serve: bool,
     port: int,
     verbose: bool,
@@ -82,6 +89,7 @@ def main(
         num_steps=steps,
         output_dir=output,
         skip_gpu=no_gpu,
+        backend=backend,
         serve=serve,
         port=port,
     )

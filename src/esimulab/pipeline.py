@@ -21,6 +21,7 @@ def run_pipeline(
     num_steps: int = 600,
     output_dir: Path | None = None,
     skip_gpu: bool = False,
+    backend: str | None = None,
     serve: bool = False,
     port: int = 8000,
 ) -> None:
@@ -32,6 +33,7 @@ def run_pipeline(
         num_steps: Simulation steps.
         output_dir: Output directory for results.
         skip_gpu: If True, skip Genesis simulation (data-only mode).
+        backend: Genesis compute backend ('gpu', 'cpu', or None for auto).
         serve: If True, launch web viewer after completion.
         port: Web viewer port.
     """
@@ -103,7 +105,7 @@ def run_pipeline(
             from esimulab.sim.runner import run_simulation
             from esimulab.sim.scene import build_scene
 
-            components = build_scene(heightfield, wind=wind, precip=precip)
+            components = build_scene(heightfield, wind=wind, precip=precip, backend=backend)
             run_simulation(
                 components,
                 precip=precip,
