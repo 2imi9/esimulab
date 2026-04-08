@@ -13,8 +13,20 @@ class TestCli:
         result = runner.invoke(main, ["--help"])
         assert result.exit_code == 0
         assert "bbox" in result.output
-        assert "datetime" in result.output
-        assert "steps" in result.output
+        assert "serve" in result.output
+
+    def test_serve_help(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["serve", "--help"])
+        assert result.exit_code == 0
+        assert "port" in result.output
+        assert "data-dir" in result.output
+
+    def test_no_args_shows_help(self):
+        runner = CliRunner()
+        result = runner.invoke(main, [])
+        assert result.exit_code == 0
+        assert "bbox" in result.output
 
     @patch("esimulab.pipeline.run_pipeline")
     def test_basic_invocation(self, mock_pipeline):

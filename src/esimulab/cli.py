@@ -9,11 +9,12 @@ from pathlib import Path
 import click
 
 
-@click.command()
+@click.group(invoke_without_command=True)
+@click.pass_context
 @click.option(
     "--bbox",
     type=str,
-    required=True,
+    default=None,
     help="Bounding box as 'west,south,east,north' in EPSG:4326 degrees.",
 )
 @click.option(
@@ -41,7 +42,8 @@ import click
 @click.option("--port", type=int, default=8000, help="Web viewer port.")
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging.")
 def main(
-    bbox: str,
+    ctx: click.Context,
+    bbox: str | None,
     dt_str: str | None,
     steps: int,
     output_dir: str,
@@ -51,18 +53,23 @@ def main(
     port: int,
     verbose: bool,
 ) -> None:
-    """Esimulab: GPU-accelerated environmental simulation.
-
-    Fetches terrain and atmospheric data for a region, runs a Genesis
-    physics simulation, and optionally serves a web viewer.
-    """
+    """Esimulab: GPU-accelerated environmental simulation."""
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    # If a subcommand is invoked, skip the default pipeline
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Default behavior: run full pipeline (requires --bbox)
+    if not bbox:
+        click.echo(ctx.get_help())
+        return
+
     logger = logging.getLogger("esimulab")
 
-    # Parse bbox
     try:
         parts = [float(x.strip()) for x in bbox.split(",")]
         if len(parts) != 4:
@@ -73,9 +80,7 @@ def main(
             "Must be 4 comma-separated floats: west,south,east,north"
         ) from None
 
-    # Parse datetime
     time = datetime.fromisoformat(dt_str) if dt_str else datetime.now()
-
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
 
@@ -93,3 +98,18 @@ def main(
         serve=serve,
         port=port,
     )
+
+
+@main.command()
+@click.option("--port", type=int, default=8000, help="Web viewer port.")
+@click.option("--data-dir", type=click.Path(), default="data", help="Data directory.")
+def serve(port: int, data_dir: str) -> None:
+    """Launch the web viewer without running a simulation."""
+    import uvicorn
+
+    import esimulab.web.server as srv
+
+    srv.DATA_DIR = Path(data_dir)
+    click.echo(f"Serving Esimulab viewer at http://localhost:{port}")
+    click.echo(f"Data directory: {data_dir}")
+    uvicorn.run(srv.app, host="0.0.0.0", port=port)
