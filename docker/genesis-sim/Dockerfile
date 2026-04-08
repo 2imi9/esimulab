@@ -34,16 +34,8 @@ WORKDIR /app
 # Copy dependency files first for layer caching
 COPY pyproject.toml uv.lock .python-version ./
 
-# Install core dependencies
+# Install core dependencies (without project)
 RUN uv sync --frozen --no-install-project
-
-# Install GPU extras: genesis-world, earth2studio, and their deps
-RUN uv pip install \
-    torch --index-url https://download.pytorch.org/whl/cu124 \
-    && uv pip install \
-    genesis-world \
-    earth2studio \
-    nvidia-physicsnemo
 
 # Copy source code
 COPY src/ src/
@@ -51,6 +43,14 @@ COPY README.md ./
 
 # Install the project itself
 RUN uv sync --frozen
+
+# Install GPU extras AFTER uv sync so they don't get overwritten
+RUN uv pip install \
+    torch --index-url https://download.pytorch.org/whl/cu124 \
+    && uv pip install \
+    genesis-world \
+    earth2studio \
+    nvidia-physicsnemo
 
 # Shared data volume mount point
 VOLUME /app/data
