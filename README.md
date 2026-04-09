@@ -1,6 +1,6 @@
 # Esimulab
 
-GPU-accelerated environmental simulation platform coupling [Genesis](https://github.com/Genesis-Embodied-AI/Genesis) physics engine with AI-downscaled atmospheric data from [Earth2Studio](https://github.com/NVIDIA/earth2studio).
+GPU-accelerated environmental simulation platform coupling [Genesis](https://github.com/Genesis-Embodied-AI/Genesis) physics engine with AI-downscaled atmospheric data from [Earth2Studio](https://github.com/NVIDIA/earth2studio) and [PhysicsNeMo](https://github.com/NVIDIA/physicsnemo) surrogate models.
 
 ## Architecture
 
@@ -8,32 +8,41 @@ GPU-accelerated environmental simulation platform coupling [Genesis](https://git
 graph LR
     subgraph Data Acquisition
         A[dem-stitcher] -->|Copernicus GLO-30| B[DEM Heightfield]
-        C[Earth2Studio] -->|ERA5 / GFS| D[Wind + Precip]
+        C[Earth2Studio] -->|ERA5 / GFS| D[Wind + Precip + Temp]
+        D -->|CorrDiff / cBottle| D2[3km Downscaled]
     end
 
-    subgraph Genesis Simulation
+    subgraph Physics Simulation
         B --> E[Terrain Entity]
-        D --> F[Force Fields + SPH Emitter]
-        E --> G[Scene]
-        F --> G
-        G -->|step loop| H[Particle Positions]
-        G -->|RayTracer| I[Video Frames]
+        D2 --> F[Force Fields + SPH Emitter]
+        D2 --> G[Material Properties]
+        E --> H[Genesis Scene]
+        F --> H
+        G --> H
+        H -->|step loop| I[Particle Positions]
+    end
+
+    subgraph AI Surrogates
+        B --> J[MeshGraphNet]
+        D2 --> K[FNO Hydrology]
     end
 
     subgraph Web Viewer
-        H -->|binary frames| J[FastAPI]
-        B -->|heightfield| J
-        J --> K[Three.js + WebGPU]
+        I -->|WebSocket / REST| L[FastAPI]
+        B -->|heightfield| L
+        L --> M[CesiumJS Globe]
+        L --> N[Three.js + WebGPU]
     end
 ```
 
 | Module | Purpose |
 |--------|---------|
 | `esimulab.terrain` | DEM + land cover fetching, UTM reprojection, Genesis heightfield conversion |
-| `esimulab.atmo` | ERA5 atmospheric data, wind forcing extraction, precipitation rate computation |
-| `esimulab.sim` | Genesis scene construction (SPH water, force-field wind, rain emitter), simulation runner |
-| `esimulab.web` | FastAPI server, Three.js terrain/particle viewer, WebGPU wind advection shader |
-| `esimulab.cli` | CLI entry point orchestrating the full pipeline |
+| `esimulab.atmo` | ERA5/GFS data, CorrDiff/cBottle downscaling, wind/precip extraction, material mapping |
+| `esimulab.sim` | Genesis scene (terrain + SPH water + MPM soil + wind), simulation runner with time-varying BCs |
+| `esimulab.surrogate` | PhysicsNeMo FNO hydrology surrogate, MeshGraphNet terrain graph conversion |
+| `esimulab.web` | FastAPI server, CesiumJS globe selector, Three.js viewer, WebSocket frame streaming |
+| `esimulab.cli` | CLI entry point with `serve` subcommand |
 
 ## Quickstart
 
@@ -41,14 +50,13 @@ graph LR
 
 - Python >= 3.11
 - [uv](https://docs.astral.sh/uv/) package manager
-- Docker (optional, for containerized runs)
-- NVIDIA GPU + CUDA (optional, for Genesis simulation)
+- Docker + NVIDIA Container Toolkit (for GPU simulation)
 
 ### Install
 
 ```bash
-git clone https://github.com/<your-org>/Esimulab.git
-cd Esimulab
+git clone https://github.com/2imi9/esimulab.git
+cd esimulab
 uv sync --group dev
 ```
 
@@ -56,70 +64,52 @@ uv sync --group dev
 
 ```bash
 uv run esimulab \
-  --bbox "-119.1,33.4,-118.9,35.4" \
+  --bbox "-118.3,34.0,-118.2,34.1" \
   --datetime "2023-06-15T12:00:00" \
-  --steps 600 \
   --no-gpu
 ```
 
-This fetches terrain and atmospheric data to `data/` without running the Genesis simulation.
-
-### Run with web viewer
+### Launch web viewer
 
 ```bash
-uv run esimulab \
-  --bbox "-119.1,33.4,-118.9,35.4" \
-  --no-gpu \
-  --serve \
-  --port 8000
+uv run esimulab serve --port 8000
 ```
 
-Open `http://localhost:8000` to view the Three.js terrain and particle visualization.
+Open `http://localhost:8000` — CesiumJS globe for region selection, then Three.js terrain viewer.
 
-### Run with GPU simulation
+### Full GPU simulation (Docker)
 
 ```bash
-# Install GPU extras
-uv sync --group dev --extra gpu
+# Build
+docker compose --profile gpu build genesis-sim
 
-uv run esimulab \
-  --bbox "-119.1,33.4,-118.9,35.4" \
-  --datetime "2023-06-15T12:00:00" \
-  --steps 1000 \
-  --serve
+# Run end-to-end pipeline
+docker compose --profile gpu run --rm genesis-sim \
+  uv run python scripts/run_e2e_pipeline.py
+
+# View results
+uv run esimulab serve --port 8000
 ```
 
 ## Docker
 
-```bash
-# Web viewer only (CPU)
-docker compose up web-viewer
-
-# Full stack with GPU
-docker compose --profile gpu up
-
-# Test Genesis import in container
-docker compose run genesis-sim python -c "import genesis"
-```
-
-### Container Architecture
-
 | Service | Base Image | GPU | Purpose |
 |---------|-----------|-----|---------|
-| `genesis-sim` | `nvidia/cuda:12.4` | Yes | Genesis simulation + data pipelines |
-| `web-viewer` | `python:3.11-slim` | No | FastAPI server + static viewer |
+| `genesis-sim` | `nvidia/cuda:12.4-devel` | Yes | Genesis + Earth2Studio + PhysicsNeMo |
+| `web-viewer` | `python:3.11-slim` | No | FastAPI + static viewer |
 
-Both containers share a `./data/` volume for simulation output exchange.
+Shared `./data/` volume for terrain, atmosphere, particle frames, and metadata.
 
 ## Development
 
 ```bash
-uv sync --group dev          # Install all deps
-uv run pytest                # Run all 60 tests
-uv run pytest -m "not gpu"   # Skip GPU-dependent tests
-uv run pytest -m integration # Run integration tests only
-uv run ruff check src/       # Lint
-uv run ruff format src/      # Format
+uv sync --group dev            # Install all deps
+uv run pytest                  # Run all 119 tests
+uv run pytest -m "not gpu"     # Skip GPU-dependent tests
+uv run ruff check src/ tests/  # Lint
+uv run ruff format src/        # Format
+uv run esimulab --help         # CLI usage
+uv run esimulab serve --help   # Web viewer
 ```
 
 ### Project Structure
@@ -127,46 +117,62 @@ uv run ruff format src/      # Format
 ```
 src/esimulab/
 ├── __init__.py
-├── cli.py              # Click CLI entry point
-├── pipeline.py         # End-to-end orchestration
+├── __main__.py          # python -m esimulab support
+├── cli.py               # Click CLI with 'serve' subcommand
+├── pipeline.py          # End-to-end orchestration
 ├── terrain/
-│   ├── dem.py          # DEM fetching (dem-stitcher)
-│   ├── landcover.py    # ESA WorldCover (rioxarray)
-│   └── convert.py      # Heightfield -> Genesis format
+│   ├── dem.py           # Copernicus DEM (dem-stitcher)
+│   ├── landcover.py     # ESA WorldCover 10m
+│   └── convert.py       # Heightfield → Genesis format
 ├── atmo/
-│   ├── fetch.py        # ERA5 via Earth2Studio
-│   ├── wind.py         # Wind forcing extraction
-│   └── precip.py       # Precipitation rate extraction
+│   ├── fetch.py         # ERA5 (ARCO) + GFS with auto-fallback
+│   ├── downscale.py     # CorrDiff (25km→3km) + cBottle
+│   ├── wind.py          # Wind forcing extraction
+│   ├── precip.py        # Precipitation rate
+│   └── material_mapping.py  # Temperature → water/soil properties
 ├── sim/
-│   ├── scene.py        # Genesis scene builder
-│   └── runner.py       # Simulation loop + frame export
+│   ├── scene.py         # Genesis scene (terrain+SPH+MPM+wind)
+│   ├── runner.py        # Sim loop with time-varying BCs
+│   └── soil.py          # MPM soil materials + land cover mapping
+├── surrogate/
+│   ├── fno.py           # FNO hydrology surrogate
+│   └── meshgraphnet.py  # MeshGraphNet terrain graphs
 └── web/
-    ├── server.py       # FastAPI server
+    ├── server.py        # FastAPI (globe, viewer, region, frames, WebSocket)
+    ├── streaming.py     # WebSocket frame streaming + subsampling
     └── static/
-        ├── index.html  # Three.js viewer
-        ├── js/main.js  # Terrain + particle rendering
+        ├── globe.html   # CesiumJS region selector
+        ├── index.html   # Three.js viewer
+        ├── js/globe.js  # Globe interaction
+        ├── js/main.js   # Sky shader + hypsometric terrain + particles
         └── shaders/wind_compute.wgsl  # WebGPU advection
 ```
 
-### Conventions
+## Verified End-to-End Pipeline
 
-- **Commits:** conventional commits (`feat:`, `fix:`, `chore:`, `test:`, `docs:`)
-- **Branches:** GitHub Flow (main + feature branches)
-- **Tests:** pytest with markers `gpu`, `integration`, `slow`
-- **Linting:** ruff (enforced via pre-commit)
+Tested on RTX 5090 laptop (24GB VRAM) in Docker:
+
+```
+Copernicus DEM (LA foothills, 395x331 @ 28m)
+  → ERA5 reanalysis (wind 1.81 m/s, temp 15.7°C)
+  → Temperature-based material properties (μ=0.0012 Pa·s)
+  → Genesis terrain + SPH water + wind forces
+  → 50 simulation steps (0.7 steps/s)
+  → 10 particle frames exported (16M particles each)
+  → Subsampled to 50k for web viewer (80ms, 586KB/frame)
+```
 
 ## VRAM Budget (24 GB RTX 5090)
 
-Run atmospheric AI inference **first**, then free weights and start Genesis simulation. Never load CorrDiff/cBottle and Genesis simultaneously.
+Run atmospheric AI inference **first**, then free weights and start Genesis. Sequential pattern keeps peak VRAM under 10GB.
 
 | Component | Est. VRAM |
 |-----------|-----------|
-| Genesis runtime + Taichi kernels | 1-2 GB |
-| Terrain heightfield (2000x2000) | ~15 MB |
+| Genesis + Taichi kernels | 1-2 GB |
 | SPH solver (100k particles) | ~200 MB |
-| Stable Fluid solver (128^3) | ~100 MB |
-| RayTracer (1080p, spp=64) | ~500 MB |
+| MPM solver (50k particles) | ~150 MB |
 | CorrDiff weights | ~4 GB |
+| cBottle cascade | ~2 GB |
 | **Peak (either phase)** | **~6-8 GB** |
 
 ## License
