@@ -309,6 +309,25 @@ async def get_buildings():
         return {"buildings": [], "count": 0, "error": str(e)}
 
 
+@app.get("/api/urban/splat/{scene_id}")
+async def get_urban_splat(scene_id: str):
+    """Return a Skyfall-GS .splat file for 3D Gaussian Splat rendering."""
+    splat_path = DATA_DIR / "urban" / "skyfall" / f"{scene_id}.splat"
+    if not splat_path.exists():
+        raise HTTPException(404, f"Urban splat '{scene_id}' not found. Download first.")
+    return FileResponse(splat_path, media_type="application/octet-stream")
+
+
+@app.get("/api/urban/splats")
+async def list_urban_splats():
+    """List available Skyfall-GS urban scenes."""
+    splat_dir = DATA_DIR / "urban" / "skyfall"
+    if not splat_dir.exists():
+        return {"scenes": [], "count": 0}
+    scenes = [f.stem for f in splat_dir.glob("*.splat")]
+    return {"scenes": scenes, "count": len(scenes)}
+
+
 @app.get("/api/urban/imperviousness")
 async def get_imperviousness():
     """Return impervious surface fraction as binary Float32Array."""
