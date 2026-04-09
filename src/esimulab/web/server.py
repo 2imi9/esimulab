@@ -218,6 +218,30 @@ async def get_simulation_metadata():
     return json.loads(meta_path.read_text())
 
 
+# --- Overlay API ---
+
+
+@app.get("/api/overlays/{overlay_type}")
+async def get_overlay(overlay_type: str):
+    """Return a simulation overlay image for CesiumJS imagery layers."""
+    overlay_path = DATA_DIR / "overlays" / f"{overlay_type}.png"
+    if overlay_path.exists():
+        return FileResponse(overlay_path, media_type="image/png")
+
+    raise HTTPException(404, f"Overlay '{overlay_type}' not found")
+
+
+@app.get("/api/overlays")
+async def list_overlays():
+    """List available simulation overlays."""
+    overlay_dir = DATA_DIR / "overlays"
+    if not overlay_dir.exists():
+        return {"overlays": []}
+
+    overlays = [f.stem for f in overlay_dir.glob("*.png")]
+    return {"overlays": overlays}
+
+
 # Mount static files for JS/CSS/assets (but not HTML pages — those are routed above)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static-assets")
 # Also mount at root for direct file access (js/globe.js, js/main.js, etc.)
