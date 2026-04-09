@@ -53,6 +53,33 @@
       padding: 16px 28px; border-radius: 10px; backdrop-filter: blur(12px);
       border: 1px solid rgba(255,255,255,0.1);
     }
+
+    #layer-controls {
+      position: absolute; bottom: 80px; left: 16px;
+      background: rgba(10,10,26,0.85); padding: 10px 14px; border-radius: 10px;
+      backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1);
+      font-size: 11px; z-index: 10;
+    }
+    #layer-controls label { display: block; margin: 4px 0; color: #cbd5e1; cursor: pointer; }
+    #layer-controls input[type="range"] { width: 100px; accent-color: #2563eb; vertical-align: middle; }
+    #layer-controls input[type="checkbox"] { accent-color: #2563eb; vertical-align: middle; }
+
+    #elevation-legend {
+      position: absolute; bottom: 80px; right: 16px;
+      background: rgba(10,10,26,0.85); padding: 10px 14px; border-radius: 10px;
+      backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1);
+      font-size: 10px; z-index: 10;
+    }
+    #elevation-legend .bar {
+      width: 20px; height: 120px; border-radius: 4px;
+      background: linear-gradient(to top, #264d1a, #408c2e, #8c8c4d, #997347, #8c807a, #c0bcb3, #f2f2f7);
+      display: inline-block; vertical-align: top;
+    }
+    #elevation-legend .labels {
+      display: inline-block; vertical-align: top; margin-left: 6px;
+      color: #94a3b8; line-height: 1;
+    }
+    #elevation-legend .labels span { display: block; }
   </style>
 </head>
 <body>
@@ -64,6 +91,22 @@
       <span id="particle-count">Particles: 0</span>
     </div>
     <div id="weather-info"></div>
+    <div id="layer-controls">
+      <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Layers</div>
+      <label><input type="checkbox" id="chk-buildings" checked> Buildings</label>
+      <label><input type="checkbox" id="chk-contours"> Contour lines</label>
+      <label>Vert. exaggeration: <span id="exag-val">3x</span><br>
+        <input type="range" id="slider-exag" min="1" max="10" step="0.5" value="3">
+      </label>
+    </div>
+    <div id="elevation-legend">
+      <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">Elevation</div>
+      <div class="bar"></div>
+      <div class="labels">
+        <span id="elev-max" style="margin-bottom:90px">--m</span>
+        <span id="elev-min">--m</span>
+      </div>
+    </div>
     <div id="controls">
       <a href="/" class="back-link">Globe</a>
       <button id="btn-play" class="active">Play</button>

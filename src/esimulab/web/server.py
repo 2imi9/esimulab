@@ -274,6 +274,40 @@ async def get_urban_metadata():
     return json.loads(meta_path.read_text())
 
 
+@app.get("/api/urban/buildings")
+async def get_buildings():
+    """Return building positions and heights as JSON for 3D rendering."""
+    bbox_str = None
+    terrain_meta_path = DATA_DIR / "terrain" / "metadata.json"
+    if terrain_meta_path.exists():
+        tmeta = json.loads(terrain_meta_path.read_text())
+        bbox_str = tmeta.get("bbox")
+
+    if not bbox_str:
+        return {"buildings": [], "count": 0}
+
+    try:
+        from esimulab.urban.overture import fetch_overture_buildings
+
+        bbox = tuple(bbox_str) if isinstance(bbox_str, list) else bbox_str
+        dataset = fetch_overture_buildings(bbox, max_buildings=500)
+
+        buildings = []
+        for b in dataset.buildings:
+            buildings.append({
+                "lon": b.centroid[0],
+                "lat": b.centroid[1],
+                "height": b.height,
+                "floors": b.num_floors,
+                "class": b.class_,
+            })
+
+        return {"buildings": buildings, "count": len(buildings), "bbox": list(bbox)}
+    except Exception as e:
+        logger.warning("Building fetch failed: %s", e)
+        return {"buildings": [], "count": 0, "error": str(e)}
+
+
 @app.get("/api/urban/imperviousness")
 async def get_imperviousness():
     """Return impervious surface fraction as binary Float32Array."""

@@ -56,12 +56,17 @@ scene.add(sunLight);
 // ── State ──────────────────────────────────────────────────
 let terrainMesh = null;
 let particleMesh = null;
+let buildingMesh = null;
+let contourLines = null;
 let frames = [];
 let currentFrame = 0;
 let isPlaying = false;
 let playbackSpeed = 1.0;
 let lastFrameTime = 0;
 let terrainMeta = null;
+let verticalExaggeration = 3.0;
+let terrainHeightData = null;
+let terrainMinH = 0, terrainMaxH = 100;
 
 // ── Hypsometric color ramp ─────────────────────────────────
 function hypsometricColor(elevation, min, max) {
@@ -134,23 +139,36 @@ async function loadTerrain() {
       dCols * dPs, dRows * dPs, dCols - 1, dRows - 1
     );
 
+    // Store raw heights for contour/rebuild
+    terrainHeightData = dHeight;
+
     const vertices = geometry.attributes.position.array;
     let minH = Infinity, maxH = -Infinity;
     for (let i = 0; i < dHeight.length; i++) {
       const h = dHeight[i] * vs;
-      vertices[i * 3 + 2] = h;
       if (h < minH) minH = h;
       if (h > maxH) maxH = h;
     }
+    terrainMinH = minH;
+    terrainMaxH = maxH;
+
+    // Apply vertical exaggeration
+    for (let i = 0; i < dHeight.length; i++) {
+      const h = dHeight[i] * vs;
+      vertices[i * 3 + 2] = h * verticalExaggeration;
+    }
     geometry.attributes.position.needsUpdate = true;
     geometry.computeVertexNormals();
+
+    // Update elevation legend
+    document.getElementById('elev-max').textContent = `${maxH.toFixed(0)}m`;
+    document.getElementById('elev-min').textContent = `${minH.toFixed(0)}m`;
 
     // Hypsometric vertex coloring
     const colors = new Float32Array(dHeight.length * 3);
     for (let i = 0; i < dHeight.length; i++) {
       const h = dHeight[i] * vs;
       const c = hypsometricColor(h, minH, maxH);
-      // Slight slope-based shading from normals
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
@@ -170,12 +188,14 @@ async function loadTerrain() {
     terrainMesh.castShadow = true;
     scene.add(terrainMesh);
 
-    // Auto-fit camera
+    // Auto-fit camera (use exaggerated heights)
     const extentX = dCols * dPs;
     const extentY = dRows * dPs;
     const diag = Math.sqrt(extentX * extentX + extentY * extentY);
-    camera.position.set(extentX * 0.6, -extentY * 0.5, maxH + diag * 0.25);
-    controls.target.set(0, 0, (minH + maxH) / 2);
+    const exagMax = maxH * verticalExaggeration;
+    const exagMid = (minH + maxH) / 2 * verticalExaggeration;
+    camera.position.set(extentX * 0.5, -extentY * 0.4, exagMax + diag * 0.2);
+    controls.target.set(0, 0, exagMid);
     camera.far = diag * 3;
     camera.updateProjectionMatrix();
     controls.update();
@@ -490,6 +510,148 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// ── Buildings ──────────────────────────────────────────────
+async function loadBuildings() {
+  try {
+    const resp = await fetch('/api/urban/buildings');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.buildings || data.buildings.length === 0) return;
+
+    // Calculate terrain center for coordinate mapping
+    let originLon = 0, originLat = 0;
+    if (terrainMeta && terrainMeta.bbox) {
+      const [w, s, e, n] = terrainMeta.bbox;
+      originLon = (w + e) / 2;
+      originLat = (s + n) / 2;
+    }
+
+    const boxGeom = new THREE.BoxGeometry(1, 1, 1);
+    const buildingMat = new THREE.MeshStandardMaterial({
+      color: 0x8899aa,
+      roughness: 0.7,
+      metalness: 0.2,
+    });
+
+    const maxBuildings = Math.min(data.buildings.length, 2000);
+    buildingMesh = new THREE.InstancedMesh(boxGeom, buildingMat, maxBuildings);
+    buildingMesh.castShadow = true;
+    buildingMesh.receiveShadow = true;
+
+    const matrix = new THREE.Matrix4();
+    let count = 0;
+
+    for (let i = 0; i < maxBuildings; i++) {
+      const b = data.buildings[i];
+      // Convert lon/lat to local meters
+      const dx = (b.lon - originLon) * 111320 * Math.cos(originLat * Math.PI / 180);
+      const dy = (b.lat - originLat) * 110540;
+      const h = b.height * verticalExaggeration;
+      const footprint = 15; // approximate building footprint size
+
+      matrix.makeScale(footprint, footprint, h);
+      matrix.setPosition(dx, dy, h / 2 * verticalExaggeration);
+      // Rebuild matrix properly
+      matrix.identity();
+      matrix.makeScale(footprint, footprint, h);
+      const pos = new THREE.Vector3(dx, dy, h / 2);
+      matrix.setPosition(pos);
+
+      buildingMesh.setMatrixAt(i, matrix);
+      count++;
+    }
+
+    buildingMesh.count = count;
+    buildingMesh.instanceMatrix.needsUpdate = true;
+    scene.add(buildingMesh);
+
+    console.log(`Loaded ${count} buildings`);
+  } catch (e) {
+    console.warn('Building load failed:', e);
+  }
+}
+
+// ── Contour Lines ──────────────────────────────────────────
+function generateContourLines() {
+  if (!terrainMesh || !terrainHeightData || !terrainMeta) return;
+
+  // Remove old contours
+  if (contourLines) {
+    scene.remove(contourLines);
+    contourLines = null;
+  }
+
+  const dPs = terrainMeta.pixel_size;
+  const geom = terrainMesh.geometry;
+  const positions = geom.attributes.position.array;
+  const cols = Math.round(Math.sqrt(terrainHeightData.length * (terrainMeta.cols / terrainMeta.rows))) || 100;
+  const rows = Math.round(terrainHeightData.length / cols) || 100;
+
+  // Contour interval: auto-scale to ~10 contour lines
+  const range = terrainMaxH - terrainMinH;
+  const interval = Math.max(10, Math.round(range / 10 / 10) * 10); // round to 10m
+
+  const linePoints = [];
+  const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.3, transparent: true });
+
+  // March through grid, find contour crossings
+  for (let elev = terrainMinH + interval; elev < terrainMaxH; elev += interval) {
+    for (let i = 0; i < positions.length / 3 - 1; i++) {
+      const z1 = positions[i * 3 + 2] / verticalExaggeration;
+      const z2 = positions[(i + 1) * 3 + 2] / verticalExaggeration;
+      if ((z1 - elev) * (z2 - elev) < 0) {
+        const t = (elev - z1) / (z2 - z1);
+        const x = positions[i * 3] + t * (positions[(i + 1) * 3] - positions[i * 3]);
+        const y = positions[i * 3 + 1] + t * (positions[(i + 1) * 3 + 1] - positions[i * 3 + 1]);
+        linePoints.push(new THREE.Vector3(x, y, elev * verticalExaggeration + 0.5));
+      }
+    }
+  }
+
+  if (linePoints.length > 1) {
+    const pointsGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
+    contourLines = new THREE.Points(pointsGeom, new THREE.PointsMaterial({
+      color: 0x000000, size: 1.5, opacity: 0.4, transparent: true,
+    }));
+    scene.add(contourLines);
+  }
+}
+
+// ── Layer Controls ─────────────────────────────────────────
+document.getElementById('slider-exag')?.addEventListener('input', (e) => {
+  verticalExaggeration = parseFloat(e.target.value);
+  document.getElementById('exag-val').textContent = `${verticalExaggeration}x`;
+
+  // Rebuild terrain Z values
+  if (terrainMesh && terrainHeightData && terrainMeta) {
+    const verts = terrainMesh.geometry.attributes.position.array;
+    const vs = terrainMeta.vertical_scale || 1;
+    for (let i = 0; i < terrainHeightData.length; i++) {
+      verts[i * 3 + 2] = terrainHeightData[i] * vs * verticalExaggeration;
+    }
+    terrainMesh.geometry.attributes.position.needsUpdate = true;
+    terrainMesh.geometry.computeVertexNormals();
+  }
+
+  // Update contours
+  if (document.getElementById('chk-contours')?.checked) {
+    generateContourLines();
+  }
+});
+
+document.getElementById('chk-buildings')?.addEventListener('change', (e) => {
+  if (buildingMesh) buildingMesh.visible = e.target.checked;
+});
+
+document.getElementById('chk-contours')?.addEventListener('change', (e) => {
+  if (e.target.checked) {
+    generateContourLines();
+  } else if (contourLines) {
+    scene.remove(contourLines);
+    contourLines = null;
+  }
+});
+
 // ── Init ───────────────────────────────────────────────────
 async function init() {
   // Check if bbox was passed from globe selection
@@ -497,13 +659,13 @@ async function init() {
   if (bbox) {
     const ok = await fetchRegionTerrain(bbox);
     if (!ok) {
-      // Still try to load whatever terrain exists
       console.warn('Region fetch failed, loading existing terrain');
     }
   }
 
   initParticles();
   await loadTerrain();
+  await loadBuildings();
   await loadFrameList();
   loadWeatherInfo();
   animate(0);
