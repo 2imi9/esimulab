@@ -185,7 +185,7 @@ def main():
 
         if step % export_interval == 0:
             try:
-                pos = water.get_pos().cpu().numpy()
+                pos = water.get_particles_pos().cpu().numpy()
                 frame_path = frames_dir / f"frame_{step:06d}.bin"
                 n = pos.shape[0]
                 with open(frame_path, "wb") as f:
