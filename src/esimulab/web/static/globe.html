@@ -75,6 +75,23 @@
     <button class="btn btn-primary" id="btn-confirm" onclick="confirmSelection()" disabled>Explore Region</button>
   </div>
 
+  <div id="sim-config" style="position:absolute;top:80px;left:16px;background:rgba(10,10,26,0.9);
+    padding:14px 18px;border-radius:10px;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);
+    font-size:12px;display:none;min-width:200px;z-index:100">
+    <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px">Simulation Config</div>
+    <label style="display:block;margin-bottom:6px;color:#cbd5e1">
+      <input type="checkbox" id="cfg-urban" style="accent-color:#2563eb"> Urban buildings
+    </label>
+    <label style="display:block;margin-bottom:6px;color:#cbd5e1">
+      <input type="checkbox" id="cfg-mpm" style="accent-color:#2563eb"> Soil erosion (MPM)
+    </label>
+    <label style="display:block;margin-bottom:8px;color:#94a3b8;font-size:11px">
+      Steps: <input type="number" id="cfg-steps" value="100" min="10" max="1000" step="10"
+        style="width:60px;background:#1e293b;border:1px solid rgba(255,255,255,0.15);color:#e0e0e0;
+        border-radius:4px;padding:2px 6px;font-size:11px">
+    </label>
+  </div>
+
   <div id="instructions">
     <div class="step">Click "Draw Region" then click two corners on the globe to select an area</div>
     <div class="hint">Use scroll to zoom, drag to rotate</div>

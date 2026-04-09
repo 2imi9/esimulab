@@ -146,7 +146,11 @@ function finishDrawing() {
   updateRegionInfo();
 
   document.getElementById('instructions').querySelector('.step').textContent =
-    'Region selected! Click "Explore Region" to generate 3D terrain';
+    'Region selected! Configure options below, then click "Explore Region"';
+
+  // Show simulation config panel
+  const configPanel = document.getElementById('sim-config');
+  if (configPanel) configPanel.style.display = 'block';
 }
 
 window.clearSelection = function () {
@@ -168,6 +172,8 @@ window.clearSelection = function () {
   document.getElementById('btn-clear').style.display = 'none';
   document.getElementById('btn-confirm').disabled = true;
   document.getElementById('region-info').style.display = 'none';
+  const cfgPanel = document.getElementById('sim-config');
+  if (cfgPanel) cfgPanel.style.display = 'none';
 
   document.getElementById('instructions').querySelector('.step').textContent =
     'Click "Draw Region" then click two corners on the globe to select an area';
@@ -200,11 +206,21 @@ window.confirmSelection = async function () {
 
   document.getElementById('loading-status').textContent = 'Requesting terrain data...';
 
+  // Read simulation config
+  const enableUrban = document.getElementById('cfg-urban')?.checked || false;
+  const enableMpm = document.getElementById('cfg-mpm')?.checked || false;
+  const steps = parseInt(document.getElementById('cfg-steps')?.value || '100');
+
   try {
     const resp = await fetch('/api/region', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ west, south, east, north }),
+      body: JSON.stringify({
+        west, south, east, north,
+        enable_urban: enableUrban,
+        enable_mpm: enableMpm,
+        steps: steps,
+      }),
     });
 
     if (!resp.ok) {
@@ -215,9 +231,15 @@ window.confirmSelection = async function () {
     const data = await resp.json();
     document.getElementById('loading-status').textContent = 'Terrain ready! Redirecting...';
 
-    // Redirect to Three.js viewer with bbox
+    // Redirect to Three.js viewer with bbox + config
     await new Promise(r => setTimeout(r, 500));
-    window.location.href = `/viewer?bbox=${west},${south},${east},${north}`;
+    const params = new URLSearchParams({
+      bbox: `${west},${south},${east},${north}`,
+      urban: enableUrban ? '1' : '0',
+      mpm: enableMpm ? '1' : '0',
+      steps: String(steps),
+    });
+    window.location.href = `/viewer?${params.toString()}`;
 
   } catch (err) {
     overlay.classList.remove('active');
