@@ -366,6 +366,38 @@ async function loadWeatherInfo() {
       }
     } catch { /* no wind data */ }
 
+    // Urban data
+    try {
+      const urbanResp = await fetch('/api/urban/metadata');
+      if (urbanResp.ok) {
+        const urban = await urbanResp.json();
+        if (urban.building_count) {
+          html += `<div class="info-label" style="margin-top:6px">Urban</div>`;
+          html += `<div class="info-value">${urban.building_count} buildings</div>`;
+          if (urban.mean_imperviousness !== undefined) {
+            html += `<div class="info-value">Impervious: ${(urban.mean_imperviousness * 100).toFixed(0)}%</div>`;
+          }
+          if (urban.mean_runoff_coefficient !== undefined) {
+            html += `<div class="info-value">Runoff coeff: ${urban.mean_runoff_coefficient.toFixed(2)}</div>`;
+          }
+        }
+      }
+    } catch { /* no urban data */ }
+
+    // Overlay links
+    try {
+      const overlayResp = await fetch('/api/overlays');
+      if (overlayResp.ok) {
+        const overlays = await overlayResp.json();
+        if (overlays.overlays && overlays.overlays.length > 0) {
+          html += `<div class="info-label" style="margin-top:6px">Overlays</div>`;
+          for (const name of overlays.overlays) {
+            html += `<div class="info-value">${name}</div>`;
+          }
+        }
+      }
+    } catch { /* no overlays */ }
+
     if (html) {
       infoPanel.innerHTML = html;
       infoPanel.style.display = 'block';

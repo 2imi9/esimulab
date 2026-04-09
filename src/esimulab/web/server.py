@@ -25,12 +25,17 @@ app = FastAPI(title="Esimulab Viewer", version="0.1.0")
 
 
 class RegionRequest(BaseModel):
-    """Bounding box for region selection."""
+    """Bounding box and simulation config for region selection."""
 
     west: float
     south: float
     east: float
     north: float
+    # Optional simulation parameters (used when triggering sim from globe)
+    datetime_iso: str | None = None
+    steps: int = 100
+    enable_urban: bool = False
+    enable_mpm: bool = False
 
 
 # --- Globe & Viewer Pages ---
@@ -101,11 +106,50 @@ async def select_region(region: RegionRequest):
             "bounds_min": list(heightfield.bounds_min),
             "bounds_max": list(heightfield.bounds_max),
             "bbox": list(bbox),
+            "enable_urban": region.enable_urban,
+            "enable_mpm": region.enable_mpm,
+            "steps": region.steps,
         }
         (terrain_dir / "metadata.json").write_text(json.dumps(meta))
 
+        # Fetch urban data if enabled
+        urban_meta = None
+        if region.enable_urban:
+            try:
+                from esimulab.urban.buildings import fetch_building_footprints
+                from esimulab.urban.surface import (
+                    compute_impervious_fraction,
+                    urban_runoff_coefficient,
+                )
+
+                buildings = fetch_building_footprints(bbox, source="synthetic")
+                urban_meta = {
+                    "building_count": buildings.count,
+                    "source": buildings.source,
+                }
+
+                # Compute impervious fraction from land cover class 50
+                lc_proxy = np.where(
+                    heightfield.height_field < np.median(heightfield.height_field),
+                    50, 30,
+                ).astype(np.uint8)
+                imp = compute_impervious_fraction(lc_proxy)
+                runoff = urban_runoff_coefficient(lc_proxy)
+                urban_meta["mean_imperviousness"] = float(imp.mean())
+                urban_meta["mean_runoff_coefficient"] = float(runoff.mean())
+
+                urban_dir = DATA_DIR / "urban"
+                urban_dir.mkdir(parents=True, exist_ok=True)
+                (urban_dir / "metadata.json").write_text(json.dumps(urban_meta))
+                np.save(urban_dir / "imperviousness.npy", imp)
+                np.save(urban_dir / "runoff_coeff.npy", runoff)
+
+                logger.info("Urban data: %d buildings, imp=%.2f", buildings.count, imp.mean())
+            except Exception:
+                logger.warning("Urban data fetch failed", exc_info=True)
+
         logger.info("Region terrain fetched: %s, shape=%s", bbox, heightfield.height_field.shape)
-        return {"status": "ok", "metadata": meta}
+        return {"status": "ok", "metadata": meta, "urban": urban_meta}
 
     except Exception as e:
         logger.exception("Region terrain fetch failed")
@@ -216,6 +260,48 @@ async def get_simulation_metadata():
         return {"status": "no_simulation"}
 
     return json.loads(meta_path.read_text())
+
+
+# --- Urban API ---
+
+
+@app.get("/api/urban/metadata")
+async def get_urban_metadata():
+    """Return urban infrastructure metadata."""
+    meta_path = DATA_DIR / "urban" / "metadata.json"
+    if not meta_path.exists():
+        return {"status": "no_urban_data"}
+    return json.loads(meta_path.read_text())
+
+
+@app.get("/api/urban/imperviousness")
+async def get_imperviousness():
+    """Return impervious surface fraction as binary Float32Array."""
+    path = DATA_DIR / "urban" / "imperviousness.npy"
+    if not path.exists():
+        raise HTTPException(404, "No imperviousness data")
+    data = np.load(path)
+    rows, cols = data.shape
+    import struct as _struct
+
+    header = _struct.pack("<II", rows, cols)
+    body = data.astype(np.float32).tobytes()
+    return Response(content=header + body, media_type="application/octet-stream")
+
+
+@app.get("/api/urban/runoff")
+async def get_runoff_coeff():
+    """Return runoff coefficient map as binary Float32Array."""
+    path = DATA_DIR / "urban" / "runoff_coeff.npy"
+    if not path.exists():
+        raise HTTPException(404, "No runoff data")
+    data = np.load(path)
+    rows, cols = data.shape
+    import struct as _struct
+
+    header = _struct.pack("<II", rows, cols)
+    body = data.astype(np.float32).tobytes()
+    return Response(content=header + body, media_type="application/octet-stream")
 
 
 # --- Overlay API ---
