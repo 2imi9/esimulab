@@ -98,6 +98,10 @@
       <label>Vert. exaggeration: <span id="exag-val">3x</span><br>
         <input type="range" id="slider-exag" min="1" max="10" step="0.5" value="3">
       </label>
+      <div style="margin-top:8px;display:flex;gap:4px">
+        <button onclick="zoomToBuildings()" style="font-size:10px;padding:3px 8px;background:#1e293b;color:#cbd5e1;border:1px solid rgba(255,255,255,0.15);border-radius:4px;cursor:pointer">Urban</button>
+        <button onclick="zoomToTerrain()" style="font-size:10px;padding:3px 8px;background:#1e293b;color:#cbd5e1;border:1px solid rgba(255,255,255,0.15);border-radius:4px;cursor:pointer">Terrain</button>
+      </div>
     </div>
     <div id="elevation-legend">
       <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">Elevation</div>

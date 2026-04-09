@@ -623,10 +623,62 @@ async function loadBuildings() {
     if (buildingMesh.instanceColor) buildingMesh.instanceColor.needsUpdate = true;
     scene.add(buildingMesh);
 
+    // Calculate building cluster center for "zoom to buildings" feature
+    if (count > 0) {
+      let sumX = 0, sumY = 0, sumZ = 0, maxH = 0;
+      for (let i = 0; i < Math.min(count, data.buildings.length); i++) {
+        const b = data.buildings[i];
+        sumX += (b.lon - originLon) * 111320 * Math.cos(originLat * Math.PI / 180);
+        sumY += (b.lat - originLat) * 110540;
+        sumZ += b.height;
+        maxH = Math.max(maxH, b.height);
+      }
+      const cx = sumX / count, cy = sumY / count;
+      const avgH = sumZ / count;
+
+      // Store for zoom button
+      window._buildingCenter = { x: cx, y: cy, z: avgH * verticalExaggeration };
+      window._buildingMaxH = maxH * verticalExaggeration;
+
+      // Auto-zoom to building cluster
+      zoomToBuildings();
+    }
+
     console.log(`Loaded ${count} buildings (residential/commercial/industrial)`);
   } catch (e) {
     console.warn('Building load failed:', e);
   }
+}
+
+// Expose to window for HTML onclick buttons
+window.zoomToBuildings = zoomToBuildings;
+window.zoomToTerrain = zoomToTerrain;
+
+function zoomToBuildings() {
+  if (!window._buildingCenter) return;
+  const c = window._buildingCenter;
+  const viewDist = Math.max(500, window._buildingMaxH * 3);
+  camera.position.set(c.x + viewDist * 0.6, c.y - viewDist * 0.5, c.z + viewDist * 0.8);
+  controls.target.set(c.x, c.y, c.z);
+  camera.near = 1;
+  camera.far = viewDist * 10;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+function zoomToTerrain() {
+  if (!terrainMeta) return;
+  const dPs = terrainMeta.pixel_size || 30;
+  const extX = (terrainMeta.cols || 100) * dPs;
+  const extY = (terrainMeta.rows || 100) * dPs;
+  const diag = Math.sqrt(extX * extX + extY * extY);
+  const exagMax = terrainMaxH * verticalExaggeration;
+  camera.position.set(extX * 0.5, -extY * 0.4, exagMax + diag * 0.2);
+  controls.target.set(0, 0, (terrainMinH + terrainMaxH) / 2 * verticalExaggeration);
+  camera.near = 1;
+  camera.far = diag * 3;
+  camera.updateProjectionMatrix();
+  controls.update();
 }
 
 // ── Contour Lines ──────────────────────────────────────────
