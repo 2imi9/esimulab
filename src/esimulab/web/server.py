@@ -163,6 +163,48 @@ async def list_frames():
     return {"frames": frames, "count": len(frames)}
 
 
+# --- WebSocket streaming ---
+
+from fastapi import WebSocket, WebSocketDisconnect  # noqa: E402
+
+from esimulab.web.streaming import FrameStreamer, load_and_subsample_frame  # noqa: E402
+
+frame_streamer = FrameStreamer(max_particles_per_frame=50000)
+
+
+@app.websocket("/ws/frames")
+async def websocket_frames(websocket: WebSocket):
+    """WebSocket endpoint for live particle frame streaming."""
+    await frame_streamer.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, listen for control messages
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        frame_streamer.disconnect(websocket)
+
+
+@app.get("/api/frames/{frame_id}/subsampled")
+async def get_frame_subsampled(frame_id: str, max_particles: int = 50000):
+    """Return a subsampled particle frame for web viewer performance."""
+    frame_path = DATA_DIR / "frames" / f"{frame_id}.bin"
+    if not frame_path.exists():
+        raise HTTPException(404, f"Frame {frame_id} not found")
+
+    positions = load_and_subsample_frame(frame_path, max_particles)
+    if positions is None:
+        raise HTTPException(500, "Failed to load frame")
+
+    import struct as _struct
+
+    n = positions.shape[0]
+    header = _struct.pack("<I", n)
+    body = positions.astype(np.float32).tobytes()
+    return Response(content=header + body, media_type="application/octet-stream")
+
+
 # --- Metadata API ---
 
 
