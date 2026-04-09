@@ -45,6 +45,10 @@ window.startDrawing = function () {
   firstCorner = null;
   viewer.scene.canvas.style.cursor = 'crosshair';
 
+  // Lock camera rotation during drawing to prevent accidental orbit
+  viewer.scene.screenSpaceCameraController.enableRotate = false;
+  viewer.scene.screenSpaceCameraController.enableTilt = false;
+
   document.getElementById('btn-draw').style.display = 'none';
   document.getElementById('instructions').querySelector('.step').textContent =
     'Click the first corner of your region on the globe';
@@ -53,15 +57,12 @@ window.startDrawing = function () {
 handler.setInputAction((click) => {
   if (!drawingMode) return;
 
-  const cartesian = viewer.scene.pickPosition(click.position);
-  if (!Cesium.defined(cartesian)) {
-    // Try ray-cast to globe
-    const ray = viewer.camera.getPickRay(click.position);
-    const globePos = viewer.scene.globe.pick(ray, viewer.scene);
-    if (!Cesium.defined(globePos)) return;
+  // Use globe.pick (ray→globe intersection) — works at any camera angle
+  const ray = viewer.camera.getPickRay(click.position);
+  if (!Cesium.defined(ray)) return;
+  const globePos = viewer.scene.globe.pick(ray, viewer.scene);
+  if (Cesium.defined(globePos)) {
     handleClick(globePos);
-  } else {
-    handleClick(cartesian);
   }
 }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
@@ -90,7 +91,9 @@ function handleClick(cartesian) {
 handler.setInputAction((movement) => {
   if (!drawingMode || !firstCorner) return;
 
-  const cartesian = viewer.scene.pickPosition(movement.endPosition);
+  const ray = viewer.camera.getPickRay(movement.endPosition);
+  if (!Cesium.defined(ray)) return;
+  const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
   if (!Cesium.defined(cartesian)) return;
 
   const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
@@ -139,6 +142,10 @@ function finishDrawing() {
   drawingMode = false;
   viewer.scene.canvas.style.cursor = 'default';
 
+  // Re-enable camera controls
+  viewer.scene.screenSpaceCameraController.enableRotate = true;
+  viewer.scene.screenSpaceCameraController.enableTilt = true;
+
   document.getElementById('btn-draw').style.display = 'none';
   document.getElementById('btn-clear').style.display = 'inline-block';
   document.getElementById('btn-confirm').disabled = false;
@@ -167,6 +174,10 @@ window.clearSelection = function () {
   firstCorner = null;
   drawingMode = false;
   viewer.scene.canvas.style.cursor = 'default';
+
+  // Re-enable camera controls
+  viewer.scene.screenSpaceCameraController.enableRotate = true;
+  viewer.scene.screenSpaceCameraController.enableTilt = true;
 
   document.getElementById('btn-draw').style.display = 'inline-block';
   document.getElementById('btn-clear').style.display = 'none';
