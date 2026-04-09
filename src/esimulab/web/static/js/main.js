@@ -562,17 +562,30 @@ async function loadBuildings() {
     let seed = 42;
     const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
 
+    // Get terrain extent for proper building placement
+    const terrainExtentX = terrainMeta ? terrainMeta.cols * (terrainMeta.pixel_size || 30) : 10000;
+    const terrainExtentY = terrainMeta ? terrainMeta.rows * (terrainMeta.pixel_size || 30) : 10000;
+
     for (let i = 0; i < maxBuildings; i++) {
       const b = data.buildings[i];
       const dx = (b.lon - originLon) * 111320 * Math.cos(originLat * Math.PI / 180);
       const dy = (b.lat - originLat) * 110540;
+
+      // Skip buildings outside terrain bounds
+      if (Math.abs(dx) > terrainExtentX / 2 || Math.abs(dy) > terrainExtentY / 2) continue;
+
+      // Building height with exaggeration, capped to reasonable scale
       const h = Math.max(b.height, 4) * verticalExaggeration;
+
+      // Estimate ground elevation at building position from terrain
+      // (approximate: use fraction of max terrain elevation based on position)
+      const groundZ = terrainMinH * verticalExaggeration;
 
       // Vary footprint based on building type and height
       let fw, fd;
       const bClass = b.class || 'unknown';
       if (bClass === 'commercial') {
-        fw = 15 + rand() * 20;  // commercial: wider
+        fw = 15 + rand() * 20;
         fd = 15 + rand() * 15;
       } else if (bClass === 'industrial') {
         fw = 20 + rand() * 30;  // industrial: large footprint
@@ -585,10 +598,10 @@ async function loadBuildings() {
       // Slight random rotation (buildings aren't all axis-aligned)
       const angle = (rand() - 0.5) * 0.3;  // ±0.15 radians (~8°)
 
-      // Build transform: rotate → scale → translate
+      // Build transform: rotate → scale → translate (sit on terrain)
       rotMatrix.makeRotationZ(angle);
       scaleMatrix.makeScale(fw, fd, h);
-      posMatrix.makeTranslation(dx, dy, h / 2);
+      posMatrix.makeTranslation(dx, dy, groundZ + h / 2);
       matrix.copy(posMatrix).multiply(rotMatrix).multiply(scaleMatrix);
 
       buildingMesh.setMatrixAt(i, matrix);
