@@ -18,15 +18,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Make python3.11 the default and install pip
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
-RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+RUN python3.11 -m pip install --upgrade pip setuptools wheel
 
 # PyTorch for CUDA 11.8
-RUN pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu118
+RUN python3.11 -m pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu118
 
-# GaussianCity Python deps
-RUN pip install easydict lxml numpy open3d opencv-python-headless pillow \
-    plyfile pynvml scipy tqdm
+# GaussianCity Python deps (open3d optional — only needed for point cloud export)
+RUN python3.11 -m pip install easydict lxml numpy opencv-python-headless pillow \
+    plyfile pynvml scipy tqdm \
+    && python3.11 -m pip install open3d || echo "open3d install failed (optional)"
 
 WORKDIR /app
 
@@ -34,14 +36,14 @@ WORKDIR /app
 RUN git clone --depth 1 https://github.com/hzxie/GaussianCity.git /app
 
 # Compile C++ extension (no CUDA needed)
-RUN cd /app/extensions/footprint_extruder && pip install .
+RUN cd /app/extensions/footprint_extruder && python3.11 -m pip install .
 
 # Compile CUDA extensions (needs nvcc from CUDA 11.8)
-RUN cd /app/extensions/diff_gaussian_rasterization && pip install . || \
+RUN cd /app/extensions/diff_gaussian_rasterization && python3.11 -m pip install . || \
     echo "WARNING: diff_gaussian_rasterization build failed — will retry at runtime"
-RUN cd /app/extensions/grid_encoder && pip install . || \
+RUN cd /app/extensions/grid_encoder && python3.11 -m pip install . || \
     echo "WARNING: grid_encoder build failed — will retry at runtime"
-RUN cd /app/extensions/voxlib && pip install . || \
+RUN cd /app/extensions/voxlib && python3.11 -m pip install . || \
     echo "WARNING: voxlib build failed — will retry at runtime"
 
 # Shared data volume
