@@ -364,7 +364,8 @@ async function loadFrameList() {
 async function loadFrame(index) {
   if (index >= frames.length) return;
   try {
-    const resp = await fetch(`/api/frames/${frames[index]}`);
+    // Use subsampled endpoint for web performance (50k particles max)
+    const resp = await fetch(`/api/frames/${frames[index]}/subsampled?max_particles=50000`);
     if (!resp.ok) return;
     const buffer = await resp.arrayBuffer();
     const view = new DataView(buffer);
