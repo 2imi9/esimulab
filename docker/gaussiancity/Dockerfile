@@ -35,15 +35,15 @@ WORKDIR /app
 # Clone GaussianCity
 RUN git clone --depth 1 https://github.com/hzxie/GaussianCity.git /app
 
-# Compile C++ extension (no CUDA needed)
-RUN cd /app/extensions/footprint_extruder && python3.11 -m pip install .
+# Compile C++ extension (needs numpy headers at build time)
+RUN cd /app/extensions/footprint_extruder && python3.11 -m pip install --no-build-isolation .
 
-# Compile CUDA extensions (needs nvcc from CUDA 11.8)
-RUN cd /app/extensions/diff_gaussian_rasterization && python3.11 -m pip install . || \
+# Compile CUDA extensions (needs nvcc from CUDA 11.8 + numpy/torch headers)
+RUN cd /app/extensions/diff_gaussian_rasterization && python3.11 -m pip install --no-build-isolation . || \
     echo "WARNING: diff_gaussian_rasterization build failed — will retry at runtime"
-RUN cd /app/extensions/grid_encoder && python3.11 -m pip install . || \
+RUN cd /app/extensions/grid_encoder && python3.11 -m pip install --no-build-isolation . || \
     echo "WARNING: grid_encoder build failed — will retry at runtime"
-RUN cd /app/extensions/voxlib && python3.11 -m pip install . || \
+RUN cd /app/extensions/voxlib && python3.11 -m pip install --no-build-isolation . || \
     echo "WARNING: voxlib build failed — will retry at runtime"
 
 # Shared data volume
