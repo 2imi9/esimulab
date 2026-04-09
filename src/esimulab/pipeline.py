@@ -62,6 +62,7 @@ def run_pipeline(
                 "origin": list(heightfield.origin),
                 "bounds_min": list(heightfield.bounds_min),
                 "bounds_max": list(heightfield.bounds_max),
+                "bbox": list(bbox),
             }
         )
     )

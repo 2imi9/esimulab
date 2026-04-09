@@ -560,9 +560,9 @@ async function loadBuildings() {
     const terrainExtentX = terrainMeta ? terrainMeta.cols * (terrainMeta.pixel_size || 30) : 10000;
     const terrainExtentY = terrainMeta ? terrainMeta.rows * (terrainMeta.pixel_size || 30) : 10000;
 
-    // Urban ground plane — flat at minimum terrain elevation
-    // Buildings sit on this flat surface (realistic for urban areas)
-    const urbanGroundZ = terrainMinH * verticalExaggeration;
+    // Urban layer is SEPARATE from terrain — no vertical exaggeration
+    // Buildings sit on a flat ground plane at real elevation (0m for flat urban)
+    const urbanGroundZ = 0;
 
     const buildingGroup = new THREE.Group();
     buildingGroup.name = 'buildings';
@@ -580,7 +580,8 @@ async function loadBuildings() {
 
       if (Math.abs(dx) > terrainExtentX / 2 || Math.abs(dy) > terrainExtentY / 2) continue;
 
-      const h = Math.max(b.height, 4) * verticalExaggeration;
+      // NO vertical exaggeration on buildings — they are at real-world scale
+      const h = Math.max(b.height, 4);
       const bClass = b.class || 'unknown';
 
       // Try to use real footprint polygon
@@ -671,9 +672,14 @@ async function loadBuildings() {
 
 function zoomToBuildings() {
   if (!window._buildingCenter) return;
+
+  // URBAN MODE: hide terrain, show only buildings on flat ground
+  if (terrainMesh) terrainMesh.visible = false;
+  if (buildingMesh) buildingMesh.visible = true;
+  scene.fog = null; // no fog in urban view
+
   const c = window._buildingCenter;
-  // Close-up view: 200m from buildings so they fill the screen
-  const viewDist = Math.max(150, window._buildingMaxH * 1.5);
+  const viewDist = Math.max(150, window._buildingMaxH * 2);
   camera.position.set(c.x + viewDist * 0.7, c.y - viewDist * 0.5, c.z + viewDist * 0.6);
   controls.target.set(c.x, c.y, c.z);
   camera.near = 0.5;
@@ -683,6 +689,10 @@ function zoomToBuildings() {
 }
 
 function zoomToTerrain() {
+  // TERRAIN MODE: show terrain, hide buildings
+  if (terrainMesh) terrainMesh.visible = true;
+  if (buildingMesh) buildingMesh.visible = false;
+
   if (!terrainMeta) return;
   const dPs = terrainMeta.pixel_size || 30;
   const extX = (terrainMeta.cols || 100) * dPs;
@@ -693,6 +703,7 @@ function zoomToTerrain() {
   controls.target.set(0, 0, (terrainMinH + terrainMaxH) / 2 * verticalExaggeration);
   camera.near = 1;
   camera.far = diag * 3;
+  scene.fog = new THREE.FogExp2(0x9db8d2, 1.5 / diag);
   camera.updateProjectionMatrix();
   controls.update();
 }
