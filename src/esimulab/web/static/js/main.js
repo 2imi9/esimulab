@@ -513,13 +513,34 @@ window.addEventListener('resize', () => {
 });
 
 // ── Buildings ──────────────────────────────────────────────
-// Per-type building colors
+// Per-type building colors and materials
 const BUILDING_COLORS = {
-  residential: new THREE.Color(0xc9a882),  // warm beige
-  commercial:  new THREE.Color(0x7a9eb8),  // cool steel blue
-  industrial:  new THREE.Color(0x8a8a8a),  // concrete grey
-  unknown:     new THREE.Color(0xb8a090),  // neutral warm
+  residential: 0xd4b896,  // warm sandstone
+  commercial:  0x6e8fa5,  // steel blue-grey
+  industrial:  0x7a7a7a,  // concrete
+  unknown:     0xb8a090,
 };
+const BUILDING_ROOF_COLORS = {
+  residential: 0x8b4513,  // brown roof
+  commercial:  0x4a6670,  // dark steel
+  industrial:  0x5a5a5a,  // dark grey
+  unknown:     0x8a7060,
+};
+
+// Parse WKT POLYGON to array of [x, y] points
+function parseWktPolygon(wkt, originLon, originLat) {
+  if (!wkt || wkt.startsWith('POINT')) return null;
+  const match = wkt.match(/POLYGON\s*\(\((.+?)\)\)/i);
+  if (!match) return null;
+  const cosLat = Math.cos(originLat * Math.PI / 180);
+  return match[1].split(',').map(p => {
+    const [lon, lat] = p.trim().split(/\s+/).map(Number);
+    return [
+      (lon - originLon) * 111320 * cosLat,
+      (lat - originLat) * 110540,
+    ];
+  });
+}
 
 async function loadBuildings() {
   try {
@@ -535,134 +556,114 @@ async function loadBuildings() {
       originLat = (s + n) / 2;
     }
 
-    const boxGeom = new THREE.BoxGeometry(1, 1, 1);
-    // Use vertex-colored material so each instance can have different color
-    const buildingMat = new THREE.MeshStandardMaterial({
-      roughness: 0.6,
-      metalness: 0.15,
-      vertexColors: false,
-    });
+    const cosLat = Math.cos(originLat * Math.PI / 180);
+    const terrainExtentX = terrainMeta ? terrainMeta.cols * (terrainMeta.pixel_size || 30) : 10000;
+    const terrainExtentY = terrainMeta ? terrainMeta.rows * (terrainMeta.pixel_size || 30) : 10000;
 
-    const maxBuildings = Math.min(data.buildings.length, 2000);
-    buildingMesh = new THREE.InstancedMesh(boxGeom, buildingMat, maxBuildings);
-    buildingMesh.castShadow = true;
-    buildingMesh.receiveShadow = true;
-    buildingMesh.instanceColor = new THREE.InstancedBufferAttribute(
-      new Float32Array(maxBuildings * 3), 3
-    );
+    // Urban ground plane — flat at minimum terrain elevation
+    // Buildings sit on this flat surface (realistic for urban areas)
+    const urbanGroundZ = terrainMinH * verticalExaggeration;
 
-    const matrix = new THREE.Matrix4();
-    const rotMatrix = new THREE.Matrix4();
-    const scaleMatrix = new THREE.Matrix4();
-    const posMatrix = new THREE.Matrix4();
-    const color = new THREE.Color();
-    let count = 0;
+    const buildingGroup = new THREE.Group();
+    buildingGroup.name = 'buildings';
+    let count = 0, maxH = 0;
+    let sumX = 0, sumY = 0;
 
-    // Seeded pseudo-random for consistent variation
+    const maxBuildings = Math.min(data.buildings.length, 1000);
     let seed = 42;
     const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
 
-    // Get terrain dimensions for building placement
-    const tCols = terrainMeta ? (terrainMeta.cols || 100) : 100;
-    const tRows = terrainMeta ? (terrainMeta.rows || 100) : 100;
-    const tPs = terrainMeta ? (terrainMeta.pixel_size || 30) : 30;
-    const terrainExtentX = tCols * tPs;
-    const terrainExtentY = tRows * tPs;
-    const tVs = terrainMeta ? (terrainMeta.vertical_scale || 1) : 1;
-
-    // Build a lookup to sample terrain height at any (dx, dy) position
-    // terrainHeightData is the downsampled heightfield used for the mesh
-    const dCols = terrainMesh ? Math.round(Math.sqrt((terrainHeightData?.length || 0) * tCols / tRows)) : tCols;
-    const dRows = terrainHeightData ? Math.round(terrainHeightData.length / dCols) : tRows;
-    const dPs = terrainExtentX / dCols;
-
-    function sampleTerrainZ(x, y) {
-      if (!terrainHeightData || dCols <= 0 || dRows <= 0) return terrainMinH;
-      // Convert from world meters (centered) to grid indices
-      const col = Math.floor((x + terrainExtentX / 2) / dPs);
-      const row = Math.floor((y + terrainExtentY / 2) / (terrainExtentY / dRows));
-      if (col < 0 || col >= dCols || row < 0 || row >= dRows) return terrainMinH;
-      return terrainHeightData[row * dCols + col] * tVs;
-    }
-
     for (let i = 0; i < maxBuildings; i++) {
       const b = data.buildings[i];
-      const dx = (b.lon - originLon) * 111320 * Math.cos(originLat * Math.PI / 180);
+      const dx = (b.lon - originLon) * 111320 * cosLat;
       const dy = (b.lat - originLat) * 110540;
 
-      // Skip buildings outside terrain bounds
       if (Math.abs(dx) > terrainExtentX / 2 || Math.abs(dy) > terrainExtentY / 2) continue;
 
-      // Building height with exaggeration
       const h = Math.max(b.height, 4) * verticalExaggeration;
-
-      // Sample actual terrain height at building position
-      const groundZ = sampleTerrainZ(dx, dy) * verticalExaggeration;
-
-      // Vary footprint based on building type and height
-      let fw, fd;
       const bClass = b.class || 'unknown';
-      if (bClass === 'commercial') {
-        fw = 15 + rand() * 20;
-        fd = 15 + rand() * 15;
-      } else if (bClass === 'industrial') {
-        fw = 20 + rand() * 30;  // industrial: large footprint
-        fd = 15 + rand() * 25;
+
+      // Try to use real footprint polygon
+      const poly = parseWktPolygon(b.footprint, originLon, originLat);
+
+      let wallGeom, roofGeom;
+      if (poly && poly.length >= 4) {
+        // Real polygon extrusion
+        const shape = new THREE.Shape();
+        shape.moveTo(poly[0][0], poly[0][1]);
+        for (let j = 1; j < poly.length; j++) shape.lineTo(poly[j][0], poly[j][1]);
+        shape.closePath();
+
+        const extrudeSettings = { depth: h, bevelEnabled: false };
+        wallGeom = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        // Rotate so extrusion goes up (Z) instead of forward (Y)
+        wallGeom.rotateX(-Math.PI / 2);
+        wallGeom.rotateX(Math.PI / 2);
       } else {
-        fw = 8 + rand() * 12;   // residential: smaller
-        fd = 8 + rand() * 10;
+        // Fallback: box with varied proportions
+        let fw, fd;
+        if (bClass === 'commercial') { fw = 15 + rand() * 20; fd = 15 + rand() * 15; }
+        else if (bClass === 'industrial') { fw = 20 + rand() * 30; fd = 15 + rand() * 25; }
+        else { fw = 8 + rand() * 12; fd = 8 + rand() * 10; }
+        wallGeom = new THREE.BoxGeometry(fw, fd, h);
       }
 
-      // Slight random rotation (buildings aren't all axis-aligned)
-      const angle = (rand() - 0.5) * 0.3;  // ±0.15 radians (~8°)
+      // Wall material — per-type color with slight variation
+      const wallColor = BUILDING_COLORS[bClass] || BUILDING_COLORS.unknown;
+      const wallMat = new THREE.MeshStandardMaterial({
+        color: wallColor,
+        roughness: 0.65,
+        metalness: 0.1,
+      });
+      wallMat.color.r += (rand() - 0.5) * 0.06;
+      wallMat.color.g += (rand() - 0.5) * 0.04;
+      wallMat.color.b += (rand() - 0.5) * 0.04;
 
-      // Build transform: rotate → scale → translate (sit on terrain)
-      rotMatrix.makeRotationZ(angle);
-      scaleMatrix.makeScale(fw, fd, h);
-      posMatrix.makeTranslation(dx, dy, groundZ + h / 2);
-      matrix.copy(posMatrix).multiply(rotMatrix).multiply(scaleMatrix);
+      const wallMesh = new THREE.Mesh(wallGeom, wallMat);
+      wallMesh.position.set(dx, dy, urbanGroundZ + h / 2);
+      wallMesh.castShadow = true;
+      wallMesh.receiveShadow = true;
 
-      buildingMesh.setMatrixAt(i, matrix);
+      // Add roof with different color
+      const roofColor = BUILDING_ROOF_COLORS[bClass] || BUILDING_ROOF_COLORS.unknown;
+      if (!poly || poly.length < 4) {
+        // Box roof — just a thin slab on top
+        const fw2 = wallGeom.parameters ? wallGeom.parameters.width : 15;
+        const fd2 = wallGeom.parameters ? wallGeom.parameters.height : 15;
+        roofGeom = new THREE.BoxGeometry(fw2 + 0.5, fd2 + 0.5, h * 0.02);
+        const roofMat = new THREE.MeshStandardMaterial({ color: roofColor, roughness: 0.8 });
+        const roofMesh = new THREE.Mesh(roofGeom, roofMat);
+        roofMesh.position.set(dx, dy, urbanGroundZ + h + h * 0.01);
+        buildingGroup.add(roofMesh);
+      }
 
-      // Per-instance color based on building type + slight variation
-      const baseColor = BUILDING_COLORS[bClass] || BUILDING_COLORS.unknown;
-      color.copy(baseColor);
-      // Add slight color variation per building
-      color.r += (rand() - 0.5) * 0.08;
-      color.g += (rand() - 0.5) * 0.06;
-      color.b += (rand() - 0.5) * 0.06;
-      buildingMesh.setColorAt(i, color);
-
+      buildingGroup.add(wallMesh);
+      sumX += dx; sumY += dy;
+      maxH = Math.max(maxH, h);
       count++;
     }
 
-    buildingMesh.count = count;
-    buildingMesh.instanceMatrix.needsUpdate = true;
-    if (buildingMesh.instanceColor) buildingMesh.instanceColor.needsUpdate = true;
-    scene.add(buildingMesh);
-
-    // Calculate building cluster center for "zoom to buildings" feature
     if (count > 0) {
-      let sumX = 0, sumY = 0, sumZ = 0, maxH = 0;
-      for (let i = 0; i < Math.min(count, data.buildings.length); i++) {
-        const b = data.buildings[i];
-        sumX += (b.lon - originLon) * 111320 * Math.cos(originLat * Math.PI / 180);
-        sumY += (b.lat - originLat) * 110540;
-        sumZ += b.height;
-        maxH = Math.max(maxH, b.height);
-      }
+      // Add flat urban ground plane under buildings
+      const groundSize = Math.max(terrainExtentX, terrainExtentY) * 0.8;
+      const groundGeom = new THREE.PlaneGeometry(groundSize, groundSize);
+      const groundMat = new THREE.MeshStandardMaterial({
+        color: 0x555555, roughness: 0.95, metalness: 0.0,
+      });
+      const ground = new THREE.Mesh(groundGeom, groundMat);
+      ground.position.set(0, 0, urbanGroundZ + 0.1); // just above terrain min
+      ground.receiveShadow = true;
+      buildingGroup.add(ground);
+
+      scene.add(buildingGroup);
+      buildingMesh = buildingGroup;
+
       const cx = sumX / count, cy = sumY / count;
-      const avgH = sumZ / count;
-
-      // Store for zoom button
-      window._buildingCenter = { x: cx, y: cy, z: avgH * verticalExaggeration };
-      window._buildingMaxH = maxH * verticalExaggeration;
-
-      // Auto-zoom to building cluster
-      zoomToBuildings();
+      window._buildingCenter = { x: cx, y: cy, z: urbanGroundZ + maxH / 2 };
+      window._buildingMaxH = maxH;
     }
 
-    console.log(`Loaded ${count} buildings (residential/commercial/industrial)`);
+    console.log(`Loaded ${count} buildings (polygon + box fallback)`);
   } catch (e) {
     console.warn('Building load failed:', e);
   }
@@ -671,11 +672,12 @@ async function loadBuildings() {
 function zoomToBuildings() {
   if (!window._buildingCenter) return;
   const c = window._buildingCenter;
-  const viewDist = Math.max(500, window._buildingMaxH * 3);
-  camera.position.set(c.x + viewDist * 0.6, c.y - viewDist * 0.5, c.z + viewDist * 0.8);
+  // Close-up view: 200m from buildings so they fill the screen
+  const viewDist = Math.max(150, window._buildingMaxH * 1.5);
+  camera.position.set(c.x + viewDist * 0.7, c.y - viewDist * 0.5, c.z + viewDist * 0.6);
   controls.target.set(c.x, c.y, c.z);
-  camera.near = 1;
-  camera.far = viewDist * 10;
+  camera.near = 0.5;
+  camera.far = viewDist * 50;
   camera.updateProjectionMatrix();
   controls.update();
 }

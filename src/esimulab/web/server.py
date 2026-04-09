@@ -300,6 +300,7 @@ async def get_buildings():
                 "height": b.height,
                 "floors": b.num_floors,
                 "class": b.class_,
+                "footprint": b.geometry_wkt,  # WKT polygon for real shape
             })
 
         return {"buildings": buildings, "count": len(buildings), "bbox": list(bbox)}
