@@ -71,15 +71,17 @@ let terrainMinH = 0, terrainMaxH = 100;
 // ── Hypsometric color ramp ─────────────────────────────────
 function hypsometricColor(elevation, min, max) {
   const t = Math.max(0, Math.min(1, (elevation - min) / (max - min || 1)));
-  // Deep green → tan → brown → grey → white
+  // High-contrast: vivid green → yellow → orange → brown → grey → white
   const stops = [
-    { t: 0.0,  r: 0.15, g: 0.40, b: 0.12 },  // deep green (valleys)
-    { t: 0.15, r: 0.25, g: 0.50, b: 0.18 },  // forest green
-    { t: 0.35, r: 0.55, g: 0.55, b: 0.30 },  // olive/tan
-    { t: 0.55, r: 0.60, g: 0.45, b: 0.28 },  // brown
-    { t: 0.75, r: 0.55, g: 0.50, b: 0.45 },  // grey-brown (rock)
-    { t: 0.90, r: 0.75, g: 0.73, b: 0.70 },  // light grey
-    { t: 1.0,  r: 0.95, g: 0.95, b: 0.97 },  // snow white
+    { t: 0.0,  r: 0.08, g: 0.45, b: 0.08 },  // rich green (valleys)
+    { t: 0.12, r: 0.20, g: 0.58, b: 0.12 },  // bright green
+    { t: 0.25, r: 0.55, g: 0.68, b: 0.15 },  // yellow-green
+    { t: 0.40, r: 0.78, g: 0.65, b: 0.20 },  // golden yellow
+    { t: 0.55, r: 0.72, g: 0.45, b: 0.18 },  // warm brown
+    { t: 0.70, r: 0.58, g: 0.38, b: 0.28 },  // dark brown
+    { t: 0.82, r: 0.62, g: 0.58, b: 0.55 },  // grey-brown (rock)
+    { t: 0.92, r: 0.82, g: 0.80, b: 0.78 },  // light grey
+    { t: 1.0,  r: 0.97, g: 0.97, b: 1.00 },  // snow white
   ];
 
   let lower = stops[0], upper = stops[stops.length - 1];
@@ -528,9 +530,11 @@ async function loadBuildings() {
 
     const boxGeom = new THREE.BoxGeometry(1, 1, 1);
     const buildingMat = new THREE.MeshStandardMaterial({
-      color: 0x8899aa,
-      roughness: 0.7,
-      metalness: 0.2,
+      color: 0xd4a574,       // warm sandstone — distinct from green/brown terrain
+      roughness: 0.5,
+      metalness: 0.1,
+      emissive: 0x332211,    // slight warm glow so buildings pop even in shadow
+      emissiveIntensity: 0.15,
     });
 
     const maxBuildings = Math.min(data.buildings.length, 2000);
@@ -546,16 +550,13 @@ async function loadBuildings() {
       // Convert lon/lat to local meters
       const dx = (b.lon - originLon) * 111320 * Math.cos(originLat * Math.PI / 180);
       const dy = (b.lat - originLat) * 110540;
-      const h = b.height * verticalExaggeration;
-      const footprint = 15; // approximate building footprint size
+      const h = Math.max(b.height, 5) * verticalExaggeration;
+      const footprint = Math.max(12, b.height * 0.8); // larger buildings = wider
 
-      matrix.makeScale(footprint, footprint, h);
-      matrix.setPosition(dx, dy, h / 2 * verticalExaggeration);
-      // Rebuild matrix properly
+      // Compose: scale then translate
       matrix.identity();
       matrix.makeScale(footprint, footprint, h);
-      const pos = new THREE.Vector3(dx, dy, h / 2);
-      matrix.setPosition(pos);
+      matrix.setPosition(dx, dy, h / 2);
 
       buildingMesh.setMatrixAt(i, matrix);
       count++;
