@@ -94,6 +94,8 @@ def build_scene(
     renderer_spp: int = 64,
     show_viewer: bool = False,
     backend: str | None = None,
+    enable_mpm: bool = False,
+    temperature_k: float | None = None,
 ) -> dict[str, Any]:
     """Build a Genesis scene with terrain, water, and atmospheric forcing.
 
@@ -141,6 +143,13 @@ def build_scene(
         "show_viewer": show_viewer,
     }
 
+    # Add MPM solver for soil if enabled
+    if enable_mpm:
+        scene_kwargs["mpm_options"] = gs.options.MPMOptions(
+            lower_bound=solver_lower,
+            upper_bound=solver_upper,
+        )
+
     # Only add SF solver if wind forcing provided
     if wind and wind.magnitude > 0:
         scene_kwargs["sf_options"] = gs.options.SFOptions(
@@ -160,6 +169,14 @@ def build_scene(
             pos=heightfield.origin,
         ),
     )
+
+    # Add soil layer (MPM)
+    soil = None
+    if enable_mpm:
+        from esimulab.sim.soil import SoilConfig, add_soil_layer, soil_config_from_temperature
+
+        soil_cfg = soil_config_from_temperature(temperature_k) if temperature_k else SoilConfig()
+        soil = add_soil_layer(gs, scene, heightfield, soil_cfg)
 
     # Add wind force fields
     if wind and wind.magnitude > 0:
@@ -211,10 +228,11 @@ def build_scene(
         raise
 
     logger.info(
-        "Scene built: terrain=%s, wind=%s, rain=%s, backend=%s",
+        "Scene built: terrain=%s, wind=%s, rain=%s, soil=%s, backend=%s",
         heightfield.height_field.shape,
         wind is not None,
         emitter is not None,
+        soil is not None,
         gs_backend,
     )
 
@@ -223,4 +241,5 @@ def build_scene(
         "terrain": terrain,
         "emitter": emitter,
         "camera": camera,
+        "soil": soil,
     }
