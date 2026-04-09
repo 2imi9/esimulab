@@ -513,6 +513,14 @@ window.addEventListener('resize', () => {
 });
 
 // ── Buildings ──────────────────────────────────────────────
+// Per-type building colors
+const BUILDING_COLORS = {
+  residential: new THREE.Color(0xc9a882),  // warm beige
+  commercial:  new THREE.Color(0x7a9eb8),  // cool steel blue
+  industrial:  new THREE.Color(0x8a8a8a),  // concrete grey
+  unknown:     new THREE.Color(0xb8a090),  // neutral warm
+};
+
 async function loadBuildings() {
   try {
     const resp = await fetch('/api/urban/buildings');
@@ -520,7 +528,6 @@ async function loadBuildings() {
     const data = await resp.json();
     if (!data.buildings || data.buildings.length === 0) return;
 
-    // Calculate terrain center for coordinate mapping
     let originLon = 0, originLat = 0;
     if (terrainMeta && terrainMeta.bbox) {
       const [w, s, e, n] = terrainMeta.bbox;
@@ -529,44 +536,81 @@ async function loadBuildings() {
     }
 
     const boxGeom = new THREE.BoxGeometry(1, 1, 1);
+    // Use vertex-colored material so each instance can have different color
     const buildingMat = new THREE.MeshStandardMaterial({
-      color: 0xd4a574,       // warm sandstone — distinct from green/brown terrain
-      roughness: 0.5,
-      metalness: 0.1,
-      emissive: 0x332211,    // slight warm glow so buildings pop even in shadow
-      emissiveIntensity: 0.15,
+      roughness: 0.6,
+      metalness: 0.15,
+      vertexColors: false,
     });
 
     const maxBuildings = Math.min(data.buildings.length, 2000);
     buildingMesh = new THREE.InstancedMesh(boxGeom, buildingMat, maxBuildings);
     buildingMesh.castShadow = true;
     buildingMesh.receiveShadow = true;
+    buildingMesh.instanceColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(maxBuildings * 3), 3
+    );
 
     const matrix = new THREE.Matrix4();
+    const rotMatrix = new THREE.Matrix4();
+    const scaleMatrix = new THREE.Matrix4();
+    const posMatrix = new THREE.Matrix4();
+    const color = new THREE.Color();
     let count = 0;
+
+    // Seeded pseudo-random for consistent variation
+    let seed = 42;
+    const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
 
     for (let i = 0; i < maxBuildings; i++) {
       const b = data.buildings[i];
-      // Convert lon/lat to local meters
       const dx = (b.lon - originLon) * 111320 * Math.cos(originLat * Math.PI / 180);
       const dy = (b.lat - originLat) * 110540;
-      const h = Math.max(b.height, 5) * verticalExaggeration;
-      const footprint = Math.max(12, b.height * 0.8); // larger buildings = wider
+      const h = Math.max(b.height, 4) * verticalExaggeration;
 
-      // Compose: scale then translate
-      matrix.identity();
-      matrix.makeScale(footprint, footprint, h);
-      matrix.setPosition(dx, dy, h / 2);
+      // Vary footprint based on building type and height
+      let fw, fd;
+      const bClass = b.class || 'unknown';
+      if (bClass === 'commercial') {
+        fw = 15 + rand() * 20;  // commercial: wider
+        fd = 15 + rand() * 15;
+      } else if (bClass === 'industrial') {
+        fw = 20 + rand() * 30;  // industrial: large footprint
+        fd = 15 + rand() * 25;
+      } else {
+        fw = 8 + rand() * 12;   // residential: smaller
+        fd = 8 + rand() * 10;
+      }
+
+      // Slight random rotation (buildings aren't all axis-aligned)
+      const angle = (rand() - 0.5) * 0.3;  // ±0.15 radians (~8°)
+
+      // Build transform: rotate → scale → translate
+      rotMatrix.makeRotationZ(angle);
+      scaleMatrix.makeScale(fw, fd, h);
+      posMatrix.makeTranslation(dx, dy, h / 2);
+      matrix.copy(posMatrix).multiply(rotMatrix).multiply(scaleMatrix);
 
       buildingMesh.setMatrixAt(i, matrix);
+
+      // Per-instance color based on building type + slight variation
+      const baseColor = BUILDING_COLORS[bClass] || BUILDING_COLORS.unknown;
+      color.copy(baseColor);
+      // Add slight color variation per building
+      color.r += (rand() - 0.5) * 0.08;
+      color.g += (rand() - 0.5) * 0.06;
+      color.b += (rand() - 0.5) * 0.06;
+      buildingMesh.setColorAt(i, color);
+
       count++;
     }
 
     buildingMesh.count = count;
     buildingMesh.instanceMatrix.needsUpdate = true;
+    if (buildingMesh.instanceColor) buildingMesh.instanceColor.needsUpdate = true;
     scene.add(buildingMesh);
 
-    console.log(`Loaded ${count} buildings`);
+    console.log(`Loaded ${count} buildings (residential/commercial/industrial)`);
   } catch (e) {
     console.warn('Building load failed:', e);
   }

@@ -1,8 +1,6 @@
 /* global Cesium */
 
 // --- CesiumJS Ion token ---
-// Get a free token at https://ion.cesium.com/tokens
-// For development, the default token provides basic imagery
 Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2ZGIyYTM2Ni1jYTNjLTRiOWQtOTM3NS1mYjhkY2Y5NjgyZTkiLCJpZCI6NDE1NTkyLCJpYXQiOjE3NzU2ODExMDF9.IYSCSnkuW93o-zfmonZaeKEskBQZtCKNGlFm7WvDDp8';
 
 // --- Viewer Setup ---
@@ -20,131 +18,134 @@ const viewer = new Cesium.Viewer('cesiumContainer', {
   selectionIndicator: false,
 });
 
-// Set initial view
 viewer.camera.flyTo({
   destination: Cesium.Cartesian3.fromDegrees(-100, 30, 15000000),
   duration: 0,
 });
-
-// Enable atmosphere and lighting
 viewer.scene.globe.enableLighting = true;
 
 // --- State ---
 let drawingMode = false;
-let firstCorner = null;
+let firstCorner = null;      // {lon, lat}
+let currentMouse = null;     // {lon, lat} — tracks mouse in real-time
 let rectangleEntity = null;
-let previewEntity = null;
+let firstMarker = null;
 let selectedBounds = null;
 
 const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+// --- Helper: pick lon/lat from screen position ---
+function pickGlobeCoords(screenPos) {
+  const ray = viewer.camera.getPickRay(screenPos);
+  if (!Cesium.defined(ray)) return null;
+  const hit = viewer.scene.globe.pick(ray, viewer.scene);
+  if (!Cesium.defined(hit)) return null;
+  const carto = Cesium.Cartographic.fromCartesian(hit);
+  return {
+    lon: Cesium.Math.toDegrees(carto.longitude),
+    lat: Cesium.Math.toDegrees(carto.latitude),
+  };
+}
 
 // --- Drawing ---
 window.startDrawing = function () {
   clearSelection();
   drawingMode = true;
   firstCorner = null;
-  viewer.scene.canvas.style.cursor = 'crosshair';
+  currentMouse = null;
 
-  // Lock camera rotation during drawing to prevent accidental orbit
-  viewer.scene.screenSpaceCameraController.enableRotate = false;
-  viewer.scene.screenSpaceCameraController.enableTilt = false;
+  // DON'T lock camera — user can rotate globe freely while in draw mode
+  // Corners are picked via LEFT_CLICK which CesiumJS doesn't use for rotation
+  // (CesiumJS uses LEFT_DRAG for rotation, LEFT_CLICK is separate)
 
   document.getElementById('btn-draw').style.display = 'none';
   document.getElementById('instructions').querySelector('.step').textContent =
-    'Click the first corner of your region on the globe';
+    'Left-click the first corner on the globe (drag to rotate view)';
 };
 
+// LEFT_CLICK picks corners (CesiumJS rotation uses LEFT_DRAG, not click)
 handler.setInputAction((click) => {
   if (!drawingMode) return;
 
-  // Use globe.pick (ray→globe intersection) — works at any camera angle
-  const ray = viewer.camera.getPickRay(click.position);
-  if (!Cesium.defined(ray)) return;
-  const globePos = viewer.scene.globe.pick(ray, viewer.scene);
-  if (Cesium.defined(globePos)) {
-    handleClick(globePos);
+  const coords = pickGlobeCoords(click.position);
+  if (!coords) return;
+
+  if (!firstCorner) {
+    // First corner placed
+    firstCorner = coords;
+
+    // Add a visible marker at the first corner
+    firstMarker = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(coords.lon, coords.lat),
+      point: { pixelSize: 10, color: Cesium.Color.YELLOW, outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },
+      label: {
+        text: 'Corner 1',
+        font: '12px sans-serif',
+        pixelOffset: new Cesium.Cartesian2(0, -20),
+        fillColor: Cesium.Color.WHITE,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        outlineWidth: 2,
+      },
+    });
+
+    // Create live-updating rectangle using CallbackProperty
+    rectangleEntity = viewer.entities.add({
+      rectangle: {
+        coordinates: new Cesium.CallbackProperty(() => {
+          if (!firstCorner || !currentMouse) return Cesium.Rectangle.fromDegrees(0, 0, 0, 0);
+          const w = Math.min(firstCorner.lon, currentMouse.lon);
+          const e = Math.max(firstCorner.lon, currentMouse.lon);
+          const s = Math.min(firstCorner.lat, currentMouse.lat);
+          const n = Math.max(firstCorner.lat, currentMouse.lat);
+          return Cesium.Rectangle.fromDegrees(w, s, e, n);
+        }, false),
+        material: Cesium.Color.CORNFLOWERBLUE.withAlpha(0.25),
+        outline: true,
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+      },
+    });
+
+    document.getElementById('instructions').querySelector('.step').textContent =
+      `Corner 1: ${coords.lat.toFixed(3)}°, ${coords.lon.toFixed(3)}° — click the opposite corner`;
+  } else {
+    // Second corner → finalize
+    const west = Math.min(firstCorner.lon, coords.lon);
+    const east = Math.max(firstCorner.lon, coords.lon);
+    const south = Math.min(firstCorner.lat, coords.lat);
+    const north = Math.max(firstCorner.lat, coords.lat);
+
+    selectedBounds = { west, south, east, north };
+
+    // Replace callback rectangle with static one
+    if (rectangleEntity) viewer.entities.remove(rectangleEntity);
+    rectangleEntity = viewer.entities.add({
+      rectangle: {
+        coordinates: Cesium.Rectangle.fromDegrees(west, south, east, north),
+        material: Cesium.Color.CORNFLOWERBLUE.withAlpha(0.3),
+        outline: true,
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+        height: 0,
+      },
+    });
+
+    finishDrawing();
   }
 }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-function handleClick(cartesian) {
-  const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
-  const lon = Cesium.Math.toDegrees(cartographic.longitude);
-  const lat = Cesium.Math.toDegrees(cartographic.latitude);
-
-  if (!firstCorner) {
-    firstCorner = { lon, lat };
-    document.getElementById('instructions').querySelector('.step').textContent =
-      `First corner: ${lat.toFixed(3)}, ${lon.toFixed(3)} — Now click the opposite corner`;
-  } else {
-    const west = Math.min(firstCorner.lon, lon);
-    const east = Math.max(firstCorner.lon, lon);
-    const south = Math.min(firstCorner.lat, lat);
-    const north = Math.max(firstCorner.lat, lat);
-
-    selectedBounds = { west, south, east, north };
-    drawRectangle(west, south, east, north);
-    finishDrawing();
-  }
-}
-
-// Live preview rectangle while moving mouse after first click
+// Track mouse for live rectangle preview
 handler.setInputAction((movement) => {
   if (!drawingMode || !firstCorner) return;
-
-  const ray = viewer.camera.getPickRay(movement.endPosition);
-  if (!Cesium.defined(ray)) return;
-  const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
-  if (!Cesium.defined(cartesian)) return;
-
-  const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
-  const lon = Cesium.Math.toDegrees(cartographic.longitude);
-  const lat = Cesium.Math.toDegrees(cartographic.latitude);
-
-  const west = Math.min(firstCorner.lon, lon);
-  const east = Math.max(firstCorner.lon, lon);
-  const south = Math.min(firstCorner.lat, lat);
-  const north = Math.max(firstCorner.lat, lat);
-
-  if (previewEntity) {
-    viewer.entities.remove(previewEntity);
-  }
-
-  previewEntity = viewer.entities.add({
-    rectangle: {
-      coordinates: Cesium.Rectangle.fromDegrees(west, south, east, north),
-      material: Cesium.Color.CORNFLOWERBLUE.withAlpha(0.2),
-      outline: true,
-      outlineColor: Cesium.Color.WHITE.withAlpha(0.5),
-      outlineWidth: 1,
-    },
-  });
+  const coords = pickGlobeCoords(movement.endPosition);
+  if (coords) currentMouse = coords;
 }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
-
-function drawRectangle(west, south, east, north) {
-  if (previewEntity) {
-    viewer.entities.remove(previewEntity);
-    previewEntity = null;
-  }
-
-  rectangleEntity = viewer.entities.add({
-    rectangle: {
-      coordinates: Cesium.Rectangle.fromDegrees(west, south, east, north),
-      material: Cesium.Color.CORNFLOWERBLUE.withAlpha(0.3),
-      outline: true,
-      outlineColor: Cesium.Color.WHITE,
-      outlineWidth: 2,
-      height: 0,
-    },
-  });
-}
 
 function finishDrawing() {
   drawingMode = false;
-  viewer.scene.canvas.style.cursor = 'default';
 
-  // Re-enable camera controls
-  viewer.scene.screenSpaceCameraController.enableRotate = true;
-  viewer.scene.screenSpaceCameraController.enableTilt = true;
+  // Remove first corner marker
+  if (firstMarker) { viewer.entities.remove(firstMarker); firstMarker = null; }
 
   document.getElementById('btn-draw').style.display = 'none';
   document.getElementById('btn-clear').style.display = 'inline-block';
@@ -155,29 +156,18 @@ function finishDrawing() {
   document.getElementById('instructions').querySelector('.step').textContent =
     'Region selected! Configure options below, then click "Explore Region"';
 
-  // Show simulation config panel
   const configPanel = document.getElementById('sim-config');
   if (configPanel) configPanel.style.display = 'block';
 }
 
 window.clearSelection = function () {
-  if (rectangleEntity) {
-    viewer.entities.remove(rectangleEntity);
-    rectangleEntity = null;
-  }
-  if (previewEntity) {
-    viewer.entities.remove(previewEntity);
-    previewEntity = null;
-  }
+  if (rectangleEntity) { viewer.entities.remove(rectangleEntity); rectangleEntity = null; }
+  if (firstMarker) { viewer.entities.remove(firstMarker); firstMarker = null; }
 
   selectedBounds = null;
   firstCorner = null;
+  currentMouse = null;
   drawingMode = false;
-  viewer.scene.canvas.style.cursor = 'default';
-
-  // Re-enable camera controls
-  viewer.scene.screenSpaceCameraController.enableRotate = true;
-  viewer.scene.screenSpaceCameraController.enableTilt = true;
 
   document.getElementById('btn-draw').style.display = 'inline-block';
   document.getElementById('btn-clear').style.display = 'none';
@@ -187,23 +177,20 @@ window.clearSelection = function () {
   if (cfgPanel) cfgPanel.style.display = 'none';
 
   document.getElementById('instructions').querySelector('.step').textContent =
-    'Click "Draw Region" then click two corners on the globe to select an area';
+    'Click "Draw Region" then left-click two corners on the globe';
 };
 
 function updateRegionInfo() {
   if (!selectedBounds) return;
-
   const { west, south, east, north } = selectedBounds;
   document.getElementById('info-north').textContent = `North: ${north.toFixed(4)}°`;
   document.getElementById('info-south').textContent = `South: ${south.toFixed(4)}°`;
   document.getElementById('info-east').textContent = `East: ${east.toFixed(4)}°`;
   document.getElementById('info-west').textContent = `West: ${west.toFixed(4)}°`;
 
-  // Approximate size in km
   const latKm = (north - south) * 111.32;
   const lonKm = (east - west) * 111.32 * Math.cos(((north + south) / 2) * Math.PI / 180);
   document.getElementById('info-size').textContent = `${lonKm.toFixed(1)} x ${latKm.toFixed(1)} km`;
-
   document.getElementById('region-info').style.display = 'block';
 }
 
@@ -214,10 +201,8 @@ window.confirmSelection = async function () {
   const { west, south, east, north } = selectedBounds;
   const overlay = document.getElementById('loading-overlay');
   overlay.classList.add('active');
-
   document.getElementById('loading-status').textContent = 'Requesting terrain data...';
 
-  // Read simulation config
   const enableUrban = document.getElementById('cfg-urban')?.checked || false;
   const enableMpm = document.getElementById('cfg-mpm')?.checked || false;
   const steps = parseInt(document.getElementById('cfg-steps')?.value || '100');
@@ -226,12 +211,7 @@ window.confirmSelection = async function () {
     const resp = await fetch('/api/region', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        west, south, east, north,
-        enable_urban: enableUrban,
-        enable_mpm: enableMpm,
-        steps: steps,
-      }),
+      body: JSON.stringify({ west, south, east, north, enable_urban: enableUrban, enable_mpm: enableMpm, steps }),
     });
 
     if (!resp.ok) {
@@ -239,10 +219,7 @@ window.confirmSelection = async function () {
       throw new Error(err.detail || 'Region fetch failed');
     }
 
-    const data = await resp.json();
     document.getElementById('loading-status').textContent = 'Terrain ready! Redirecting...';
-
-    // Redirect to Three.js viewer with bbox + config
     await new Promise(r => setTimeout(r, 500));
     const params = new URLSearchParams({
       bbox: `${west},${south},${east},${north}`,
@@ -251,7 +228,6 @@ window.confirmSelection = async function () {
       steps: String(steps),
     });
     window.location.href = `/viewer?${params.toString()}`;
-
   } catch (err) {
     overlay.classList.remove('active');
     alert(`Error: ${err.message}`);
