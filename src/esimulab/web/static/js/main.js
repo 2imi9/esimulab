@@ -562,9 +562,28 @@ async function loadBuildings() {
     let seed = 42;
     const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
 
-    // Get terrain extent for proper building placement
-    const terrainExtentX = terrainMeta ? terrainMeta.cols * (terrainMeta.pixel_size || 30) : 10000;
-    const terrainExtentY = terrainMeta ? terrainMeta.rows * (terrainMeta.pixel_size || 30) : 10000;
+    // Get terrain dimensions for building placement
+    const tCols = terrainMeta ? (terrainMeta.cols || 100) : 100;
+    const tRows = terrainMeta ? (terrainMeta.rows || 100) : 100;
+    const tPs = terrainMeta ? (terrainMeta.pixel_size || 30) : 30;
+    const terrainExtentX = tCols * tPs;
+    const terrainExtentY = tRows * tPs;
+    const tVs = terrainMeta ? (terrainMeta.vertical_scale || 1) : 1;
+
+    // Build a lookup to sample terrain height at any (dx, dy) position
+    // terrainHeightData is the downsampled heightfield used for the mesh
+    const dCols = terrainMesh ? Math.round(Math.sqrt((terrainHeightData?.length || 0) * tCols / tRows)) : tCols;
+    const dRows = terrainHeightData ? Math.round(terrainHeightData.length / dCols) : tRows;
+    const dPs = terrainExtentX / dCols;
+
+    function sampleTerrainZ(x, y) {
+      if (!terrainHeightData || dCols <= 0 || dRows <= 0) return terrainMinH;
+      // Convert from world meters (centered) to grid indices
+      const col = Math.floor((x + terrainExtentX / 2) / dPs);
+      const row = Math.floor((y + terrainExtentY / 2) / (terrainExtentY / dRows));
+      if (col < 0 || col >= dCols || row < 0 || row >= dRows) return terrainMinH;
+      return terrainHeightData[row * dCols + col] * tVs;
+    }
 
     for (let i = 0; i < maxBuildings; i++) {
       const b = data.buildings[i];
@@ -574,12 +593,11 @@ async function loadBuildings() {
       // Skip buildings outside terrain bounds
       if (Math.abs(dx) > terrainExtentX / 2 || Math.abs(dy) > terrainExtentY / 2) continue;
 
-      // Building height with exaggeration, capped to reasonable scale
+      // Building height with exaggeration
       const h = Math.max(b.height, 4) * verticalExaggeration;
 
-      // Estimate ground elevation at building position from terrain
-      // (approximate: use fraction of max terrain elevation based on position)
-      const groundZ = terrainMinH * verticalExaggeration;
+      // Sample actual terrain height at building position
+      const groundZ = sampleTerrainZ(dx, dy) * verticalExaggeration;
 
       // Vary footprint based on building type and height
       let fw, fd;
@@ -649,10 +667,6 @@ async function loadBuildings() {
     console.warn('Building load failed:', e);
   }
 }
-
-// Expose to window for HTML onclick buttons
-window.zoomToBuildings = zoomToBuildings;
-window.zoomToTerrain = zoomToTerrain;
 
 function zoomToBuildings() {
   if (!window._buildingCenter) return;
@@ -782,3 +796,7 @@ async function init() {
 }
 
 init();
+
+// Expose zoom functions to window for HTML onclick buttons
+window.zoomToBuildings = zoomToBuildings;
+window.zoomToTerrain = zoomToTerrain;
