@@ -103,9 +103,9 @@ def main():
 
     gs.init(backend=gs.gpu, precision="32")
 
-    # Downsample terrain for Genesis (large heightfields are slow)
+    # Downsample terrain for Genesis (SDF preprocessing is very slow for >50k verts)
     hf = heightfield.height_field
-    max_gs_dim = 128
+    max_gs_dim = 64  # keep small to avoid SDF memory explosion
     if hf.shape[0] > max_gs_dim or hf.shape[1] > max_gs_dim:
         step_r = max(1, hf.shape[0] // max_gs_dim)
         step_c = max(1, hf.shape[1] // max_gs_dim)
@@ -150,7 +150,7 @@ def main():
         ),
         morph=gs.morphs.Box(
             pos=(0, 0, z_mid + 20),
-            size=(50, 50, 10),
+            size=(20, 20, 5),
         ),
         surface=gs.surfaces.Default(color=(0.3, 0.6, 1.0, 0.8), vis_mode="particle"),
     )
