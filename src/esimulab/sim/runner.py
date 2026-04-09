@@ -77,12 +77,13 @@ def run_simulation(
         # Export particle positions
         if export_dir and step % export_interval == 0:
             try:
-                # Get SPH particle positions
-                particles = scene.get_state()  # varies by Genesis version
-                if hasattr(particles, "get_pos"):
-                    pos = particles.get_pos().cpu().numpy()
-                    frame_path = export_dir / f"frame_{step:06d}.bin"
-                    _export_frame(pos, frame_path)
+                # Get SPH particle positions via entity API
+                for entity in components.get("sph_entities", []):
+                    if hasattr(entity, "get_particles_pos"):
+                        pos = entity.get_particles_pos().cpu().numpy()
+                        frame_path = export_dir / f"frame_{step:06d}.bin"
+                        _export_frame(pos, frame_path)
+                        break
             except Exception:
                 logger.debug("Could not export frame %d", step, exc_info=True)
 
