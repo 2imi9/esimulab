@@ -20,6 +20,26 @@ services:
     profiles:
       - gpu
 
+  gaussiancity:
+    build:
+      context: .
+      dockerfile: docker/gaussiancity/Dockerfile
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ./data:/app/data
+      - ./models/gaussiancity:/models:ro
+    env_file:
+      - path: .env
+        required: false
+    profiles:
+      - city
+
   web-viewer:
     build:
       context: .
