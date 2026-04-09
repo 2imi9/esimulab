@@ -8,14 +8,18 @@ ENV PYTHONUNBUFFERED=1
 ENV TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;8.9;9.0"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3.11-dev \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-venv python3.11-dev python3.11-distutils \
+    python3-pip \
     git curl wget \
     libgl1-mesa-glx libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Make python3.11 the default
+# Make python3.11 the default and install pip
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
-RUN python3 -m ensurepip && python3 -m pip install --upgrade pip
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 
 # PyTorch for CUDA 11.8
 RUN pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu118
