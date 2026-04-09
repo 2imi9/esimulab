@@ -190,6 +190,18 @@ def build_scene(
             )
         )
 
+    # Add initial water body (SPH)
+    z_mid = (bmin[2] + bmax[2]) / 2
+    water_extent = min(bmax[0] - bmin[0], bmax[1] - bmin[1]) * 0.15
+    water = scene.add_entity(
+        material=gs.materials.SPH.Liquid(rho=1000.0, mu=0.005, gamma=0.01),
+        morph=gs.morphs.Box(
+            pos=(0, 0, z_mid + 10),
+            size=(water_extent, water_extent, water_extent * 0.3),
+        ),
+        surface=gs.surfaces.Default(color=(0.3, 0.6, 1.0, 0.8), vis_mode="particle"),
+    )
+
     # Add rain emitter
     emitter = None
     if precip and precip.rate_mm_hr > 0:
@@ -239,7 +251,9 @@ def build_scene(
     return {
         "scene": scene,
         "terrain": terrain,
+        "water": water,
         "emitter": emitter,
         "camera": camera,
         "soil": soil,
+        "z_top": bmax[2] + 50,
     }
