@@ -106,13 +106,15 @@ def run_pipeline(
             from esimulab.sim.scene import build_scene
 
             components = build_scene(heightfield, wind=wind, precip=precip, backend=backend)
-            run_simulation(
+            sim_stats = run_simulation(
                 components,
                 precip=precip,
+                wind=wind,
                 num_steps=num_steps,
                 export_dir=output_dir / "frames",
                 video_path=str(output_dir / "video" / "simulation.mp4"),
             )
+            logger.info("Simulation stats: %s", sim_stats)
         except ImportError:
             logger.warning("Genesis not available — skipping simulation")
         except Exception:
