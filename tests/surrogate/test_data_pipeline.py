@@ -67,4 +67,4 @@ class TestTraining:
         )
         assert len(history["train_losses"]) == 2
         assert len(history["val_losses"]) == 2
-        assert all(l > 0 for l in history["train_losses"])
+        assert all(loss > 0 for loss in history["train_losses"])

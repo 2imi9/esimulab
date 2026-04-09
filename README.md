@@ -93,18 +93,19 @@ uv run esimulab serve --port 8000
 
 ## Docker
 
-| Service | Base Image | GPU | Purpose |
-|---------|-----------|-----|---------|
-| `genesis-sim` | `nvidia/cuda:12.4-devel` | Yes | Genesis + Earth2Studio + PhysicsNeMo |
-| `web-viewer` | `python:3.11-slim` | No | FastAPI + static viewer |
+| Service | Base Image | CUDA | Profile | Purpose |
+|---------|-----------|------|---------|---------|
+| `genesis-sim` | `nvidia/cuda:12.4-devel` | 12.4 | `gpu` | Genesis physics + Earth2Studio + PhysicsNeMo |
+| `gaussiancity` | `nvidia/cuda:11.8-devel` | 11.8 | `city` | GaussianCity photorealistic city generation |
+| `web-viewer` | `python:3.11-slim` | None | default | FastAPI + CesiumJS + Three.js |
 
-Shared `./data/` volume for terrain, atmosphere, particle frames, and metadata.
+Multi-container architecture isolates incompatible CUDA versions. Shared `./data/` volume for all output.
 
 ## Development
 
 ```bash
 uv sync --group dev            # Install all deps
-uv run pytest                  # Run all 119 tests
+uv run pytest                  # Run all 214 tests
 uv run pytest -m "not gpu"     # Skip GPU-dependent tests
 uv run ruff check src/ tests/  # Lint
 uv run ruff format src/        # Format
@@ -117,35 +118,51 @@ uv run esimulab serve --help   # Web viewer
 ```
 src/esimulab/
 ├── __init__.py
-├── __main__.py          # python -m esimulab support
-├── cli.py               # Click CLI with 'serve' subcommand
-├── pipeline.py          # End-to-end orchestration
+├── __main__.py              # python -m esimulab support
+├── cli.py                   # Click CLI with 'serve' subcommand
+├── pipeline.py              # End-to-end orchestration
 ├── terrain/
-│   ├── dem.py           # Copernicus DEM (dem-stitcher)
-│   ├── landcover.py     # ESA WorldCover 10m
-│   └── convert.py       # Heightfield → Genesis format
+│   ├── dem.py               # Copernicus DEM (dem-stitcher)
+│   ├── landcover.py         # ESA WorldCover 10m
+│   ├── convert.py           # Heightfield → Genesis format
+│   └── mesh.py              # DEM-to-mesh + decimation + OBJ/STL/GLB export
 ├── atmo/
-│   ├── fetch.py         # ERA5 (ARCO) + GFS with auto-fallback
-│   ├── downscale.py     # CorrDiff (25km→3km) + cBottle
-│   ├── wind.py          # Wind forcing extraction
-│   ├── precip.py        # Precipitation rate
+│   ├── fetch.py             # ERA5 (ARCO) + GFS with auto-fallback
+│   ├── downscale.py         # CorrDiff (25km→3km) + cBottle
+│   ├── forecast.py          # GraphCast / Pangu / FCNv2 prognostic models
+│   ├── wind.py              # Wind forcing extraction
+│   ├── precip.py            # Precipitation rate
 │   └── material_mapping.py  # Temperature → water/soil properties
 ├── sim/
-│   ├── scene.py         # Genesis scene (terrain+SPH+MPM+wind)
-│   ├── runner.py        # Sim loop with time-varying BCs
-│   └── soil.py          # MPM soil materials + land cover mapping
+│   ├── scene.py             # Genesis scene (terrain+SPH+MPM+wind+buildings)
+│   ├── runner.py            # Sim loop with time-varying BCs + frame export
+│   ├── soil.py              # MPM soil materials + land cover mapping
+│   ├── wind_zones.py        # Spatial wind zones from atmo grid
+│   ├── camera.py            # Multi-modal rendering (RGB/depth/seg/normal)
+│   ├── renderer.py          # RayTracer/Rasterizer selection + LuisaRender
+│   ├── parallel.py          # Multi-env parallel sim + differentiable mode
+│   └── dynamic_forcing.py   # Time-varying wind rotation + precip ramping
 ├── surrogate/
-│   ├── fno.py           # FNO hydrology surrogate
-│   └── meshgraphnet.py  # MeshGraphNet terrain graphs
+│   ├── fno.py               # FNO hydrology surrogate + training
+│   ├── meshgraphnet.py      # MeshGraphNet terrain graphs
+│   ├── pino.py              # Physics-informed (shallow water + N-S residuals)
+│   └── data_pipeline.py     # Training data generation + DataLoader
+├── urban/
+│   ├── buildings.py         # OSM building footprints + 3D extrusion
+│   ├── overture.py          # Overture Maps 2.3B buildings via DuckDB/S3
+│   ├── surface.py           # Impervious surface + runoff + UHI
+│   ├── wind_canyon.py       # Urban canyon wind effects (Oke classification)
+│   └── gaussian_city.py     # GaussianCity inference (Docker, CVPR 2025)
 └── web/
-    ├── server.py        # FastAPI (globe, viewer, region, frames, WebSocket)
-    ├── streaming.py     # WebSocket frame streaming + subsampling
+    ├── server.py            # FastAPI (globe, viewer, region, urban, overlays, WS)
+    ├── streaming.py         # WebSocket frame streaming + subsampling
+    ├── overlay.py           # CesiumJS imagery overlays (wind/precip/density)
     └── static/
-        ├── globe.html   # CesiumJS region selector
-        ├── index.html   # Three.js viewer
-        ├── js/globe.js  # Globe interaction
-        ├── js/main.js   # Sky shader + hypsometric terrain + particles
-        └── shaders/wind_compute.wgsl  # WebGPU advection
+        ├── globe.html       # CesiumJS region selector + sim config panel
+        ├── index.html       # Three.js viewer + layer controls + legend
+        ├── js/globe.js      # Globe interaction (free rotation + click corners)
+        ├── js/main.js       # Sky + terrain + buildings + particles + contours
+        └── shaders/wind_compute.wgsl  # WebGPU wind advection
 ```
 
 ## Verified End-to-End Pipeline
