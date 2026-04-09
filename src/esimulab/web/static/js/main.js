@@ -252,6 +252,20 @@ function initParticles(maxCount = 100000) {
   scene.add(particleMesh);
 }
 
+// ── Wind arrow indicator ───────────────────────────────────
+let windArrow = null;
+
+function createWindArrow(dir, magnitude) {
+  if (windArrow) scene.remove(windArrow);
+  if (!terrainMesh || magnitude < 0.1) return;
+
+  const arrowDir = new THREE.Vector3(dir[0], dir[1], 0).normalize();
+  const origin = new THREE.Vector3(0, 0, 300);
+  const length = Math.min(magnitude * 50, 500);
+  windArrow = new THREE.ArrowHelper(arrowDir, origin, length, 0xffaa00, length * 0.2, length * 0.1);
+  scene.add(windArrow);
+}
+
 function updateParticles(positions) {
   if (!particleMesh) return;
   const count = positions.length / 3;
@@ -331,13 +345,24 @@ async function loadWeatherInfo() {
       html += `<div class="info-value">${n.toFixed(3)}°N ${w.toFixed(3)}°W</div>`;
     }
 
-    // Try wind data
+    // Try wind data from simulation metadata
     try {
-      const windResp = await fetch('/static/wind.json');
-      if (windResp.ok) {
-        const wind = await windResp.json();
-        html += `<div class="info-label" style="margin-top:6px">Wind</div>`;
-        html += `<div class="info-value">${wind.magnitude?.toFixed(1) || '?'} m/s</div>`;
+      const simResp = await fetch('/api/metadata');
+      if (simResp.ok) {
+        const simMeta = await simResp.json();
+        if (simMeta.wind_magnitude) {
+          html += `<div class="info-label" style="margin-top:6px">Wind</div>`;
+          html += `<div class="info-value">${simMeta.wind_magnitude.toFixed(1)} m/s</div>`;
+        }
+        if (simMeta.temperature_k) {
+          const tC = (simMeta.temperature_k - 273.15).toFixed(1);
+          html += `<div class="info-label" style="margin-top:6px">Temperature</div>`;
+          html += `<div class="info-value">${tC}°C</div>`;
+        }
+        if (simMeta.precipitation_mm_hr !== undefined) {
+          html += `<div class="info-label" style="margin-top:6px">Precipitation</div>`;
+          html += `<div class="info-value">${simMeta.precipitation_mm_hr.toFixed(1)} mm/hr</div>`;
+        }
       }
     } catch { /* no wind data */ }
 
